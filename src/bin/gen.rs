@@ -1,9 +1,10 @@
 //! k2rule-gen: CLI tool for generating binary rule files from Clash YAML configs.
 
 use clap::{Parser, Subcommand};
-use k2rule::binary::{BinaryRuleWriter, IntermediateRules};
-use k2rule::converter::ClashConverter;
-use k2rule::Target;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use k2rule::binary::BinaryRuleWriter;
+use k2rule::converter::{ClashConfig, ClashConverter};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -46,16 +47,6 @@ enum Commands {
         verbose: bool,
     },
 
-    /// Download and generate rules from remote URLs
-    Download {
-        /// Output directory for binary files
-        #[arg(short, long, default_value = "output")]
-        output_dir: PathBuf,
-
-        /// Verbose output
-        #[arg(short, long)]
-        verbose: bool,
-    },
 }
 
 fn main() {
@@ -83,15 +74,6 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Download {
-            output_dir,
-            verbose,
-        } => {
-            if let Err(e) = download_and_generate(&output_dir, verbose) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
     }
 }
 
@@ -101,7 +83,46 @@ fn convert_file(input: &PathBuf, output: &PathBuf, verbose: bool) -> Result<(), 
     }
 
     let yaml_content = fs::read_to_string(input)?;
-    let converter = ClashConverter::new();
+
+    // Parse config first to get rule-providers
+    let config: ClashConfig = serde_yaml::from_str(&yaml_content)?;
+
+    // Create HTTP client for downloading rule providers
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let mut converter = ClashConverter::new();
+
+    // Download and load each rule provider
+    for (name, provider) in &config.rule_providers {
+        if let Some(url) = &provider.url {
+            if verbose {
+                println!("  Downloading provider '{}': {}", name, url);
+            }
+
+            match client.get(url).send() {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        let content = response.text()?;
+                        let lines = parse_provider_payload(&content);
+
+                        if verbose {
+                            println!("    Loaded {} rules", lines.len());
+                        }
+
+                        converter.set_provider_rules(name, lines);
+                    } else {
+                        eprintln!("  Warning: Failed to download {}: {}", name, response.status());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("  Warning: Failed to download {}: {}", name, e);
+                }
+            }
+        }
+    }
+
     let rules = converter.convert(&yaml_content)?;
 
     if verbose {
@@ -117,12 +138,32 @@ fn convert_file(input: &PathBuf, output: &PathBuf, verbose: bool) -> Result<(), 
     let mut writer = BinaryRuleWriter::new();
     let binary_data = writer.write(&rules)?;
 
-    if verbose {
-        println!("Writing output file: {:?} ({} bytes)", output, binary_data.len());
-    }
+    // Check if output should be gzip compressed
+    let is_gzip = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e == "gz")
+        .unwrap_or(false);
 
-    let mut file = fs::File::create(output)?;
-    file.write_all(&binary_data)?;
+    if is_gzip {
+        if verbose {
+            println!(
+                "Writing gzip compressed output file: {:?} ({} bytes uncompressed)",
+                output,
+                binary_data.len()
+            );
+        }
+        let file = fs::File::create(output)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        encoder.write_all(&binary_data)?;
+        encoder.finish()?;
+    } else {
+        if verbose {
+            println!("Writing output file: {:?} ({} bytes)", output, binary_data.len());
+        }
+        let mut file = fs::File::create(output)?;
+        file.write_all(&binary_data)?;
+    }
 
     println!("Successfully converted {:?} -> {:?}", input, output);
     Ok(())
@@ -136,17 +177,17 @@ fn generate_all(output_dir: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::
         return Err("clash_rules directory not found".into());
     }
 
-    // Generate cn_blacklist.k2r
+    // Generate cn_blacklist.k2r.gz (gzip compressed)
     let blacklist_path = clash_rules_dir.join("cn_blacklist.yml");
     if blacklist_path.exists() {
-        let output_path = output_dir.join("cn_blacklist.k2r");
+        let output_path = output_dir.join("cn_blacklist.k2r.gz");
         convert_file(&blacklist_path, &output_path, verbose)?;
     }
 
-    // Generate cn_whitelist.k2r
+    // Generate cn_whitelist.k2r.gz (gzip compressed)
     let whitelist_path = clash_rules_dir.join("cn_whitelist.yml");
     if whitelist_path.exists() {
-        let output_path = output_dir.join("cn_whitelist.k2r");
+        let output_path = output_dir.join("cn_whitelist.k2r.gz");
         convert_file(&whitelist_path, &output_path, verbose)?;
     }
 
@@ -154,159 +195,44 @@ fn generate_all(output_dir: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-fn download_and_generate(output_dir: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
-    fs::create_dir_all(output_dir)?;
+/// Parse provider payload content (handles both YAML payload format and plain text).
+fn parse_provider_payload(content: &str) -> Vec<String> {
+    let trimmed = content.trim();
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()?;
-
-    // Define rule providers to download
-    let providers = vec![
-        (
-            "reject",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt",
-            Target::Reject,
-        ),
-        (
-            "proxy",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/proxy.txt",
-            Target::Proxy,
-        ),
-        (
-            "direct",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/direct.txt",
-            Target::Direct,
-        ),
-        (
-            "private",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/private.txt",
-            Target::Direct,
-        ),
-        (
-            "gfw",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gfw.txt",
-            Target::Proxy,
-        ),
-        (
-            "greatfire",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/greatfire.txt",
-            Target::Proxy,
-        ),
-        (
-            "tld-not-cn",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/tld-not-cn.txt",
-            Target::Proxy,
-        ),
-        (
-            "cncidr",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/cncidr.txt",
-            Target::Direct,
-        ),
-        (
-            "lancidr",
-            "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/lancidr.txt",
-            Target::Direct,
-        ),
-    ];
-
-    let mut all_rules = IntermediateRules::new();
-
-    for (name, url, target) in &providers {
-        if verbose {
-            println!("Downloading {}: {}", name, url);
-        }
-
-        match client.get(*url).send() {
-            Ok(response) => {
-                if response.status().is_success() {
-                    let content = response.text()?;
-                    parse_provider_content(&mut all_rules, &content, *target, name);
-                    if verbose {
-                        println!("  Downloaded {} rules", content.lines().count());
-                    }
+    // Check if it's YAML payload format
+    if trimmed.starts_with("payload:") {
+        // Parse YAML format: payload:\n  - 'rule1'\n  - 'rule2'
+        trimmed
+            .lines()
+            .skip(1) // Skip "payload:" line
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    return None;
+                }
+                // Remove "- " prefix and quotes
+                let rule = line
+                    .strip_prefix('-')
+                    .map(|s| s.trim())
+                    .unwrap_or(line);
+                let rule = rule
+                    .trim_start_matches('\'')
+                    .trim_end_matches('\'')
+                    .trim_start_matches('"')
+                    .trim_end_matches('"');
+                if rule.is_empty() {
+                    None
                 } else {
-                    eprintln!("  Warning: Failed to download {}: {}", name, response.status());
+                    Some(rule.to_string())
                 }
-            }
-            Err(e) => {
-                eprintln!("  Warning: Failed to download {}: {}", name, e);
-            }
-        }
+            })
+            .collect()
+    } else {
+        // Plain text format: one rule per line
+        trimmed
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+            .map(|l| l.trim().to_string())
+            .collect()
     }
-
-    // Set fallback to PROXY (cn_blacklist mode)
-    all_rules.set_fallback(Target::Direct);
-
-    if verbose {
-        println!(
-            "\nTotal rules: {} domains, {} CIDRs, {} GeoIP",
-            all_rules.exact_domains.len() + all_rules.suffix_domains.len(),
-            all_rules.v4_cidrs.len() + all_rules.v6_cidrs.len(),
-            all_rules.geoip_countries.len()
-        );
-    }
-
-    // Write combined binary file
-    let mut writer = BinaryRuleWriter::new();
-    let binary_data = writer.write(&all_rules)?;
-
-    let output_path = output_dir.join("rules.k2r");
-    let mut file = fs::File::create(&output_path)?;
-    file.write_all(&binary_data)?;
-
-    println!("Generated {:?} ({} bytes)", output_path, binary_data.len());
-    Ok(())
-}
-
-fn parse_provider_content(rules: &mut IntermediateRules, content: &str, target: Target, name: &str) {
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        // Check if it's a CIDR rule
-        if name.contains("cidr") {
-            if let Some((network, prefix_len)) = parse_cidr(line) {
-                match network {
-                    CidrNetwork::V4(n) => rules.add_v4_cidr(n, prefix_len, target),
-                    CidrNetwork::V6(n) => rules.add_v6_cidr(n, prefix_len, target),
-                }
-            }
-        } else {
-            // Domain rule
-            // Convert +. prefix to . prefix
-            let domain = if line.starts_with("+.") {
-                format!(".{}", &line[2..])
-            } else {
-                line.to_string()
-            };
-            rules.add_domain(&domain, target);
-        }
-    }
-}
-
-enum CidrNetwork {
-    V4(u32),
-    V6([u8; 16]),
-}
-
-fn parse_cidr(cidr: &str) -> Option<(CidrNetwork, u8)> {
-    let parts: Vec<&str> = cidr.split('/').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let prefix_len: u8 = parts[1].parse().ok()?;
-
-    if let Ok(addr) = parts[0].parse::<std::net::Ipv4Addr>() {
-        return Some((CidrNetwork::V4(u32::from(addr)), prefix_len));
-    }
-
-    if let Ok(addr) = parts[0].parse::<std::net::Ipv6Addr>() {
-        return Some((CidrNetwork::V6(addr.octets()), prefix_len));
-    }
-
-    None
 }

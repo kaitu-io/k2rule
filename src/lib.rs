@@ -48,6 +48,7 @@ mod target;
 
 pub mod binary;
 pub mod converter;
+pub mod remote;
 pub mod rule;
 pub mod ruleset;
 

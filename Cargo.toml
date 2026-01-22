@@ -64,6 +64,12 @@ quick_cache = "0.6"
 # Arc swap for atomic pointer replacement (hot reload)
 arc-swap = "1.7"
 
+# Gzip compression
+flate2 = "1.0"
+
+# HTTP client for async downloads (in lib)
+ureq = { version = "2.9", features = ["gzip"] }
+
 # Benchmarking
 criterion = { version = "0.5", optional = true }
 
