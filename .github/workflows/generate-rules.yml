@@ -1,6 +1,9 @@
 name: Generate Rules
 
 on:
+  push:
+    branches:
+      - master
   schedule:
     # Run daily at 7:00 AM Beijing time (23:00 UTC previous day)
     - cron: '0 23 * * *'

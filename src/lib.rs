@@ -11,6 +11,7 @@
 //! - **Dynamic rules**: Add rules at runtime without reloading
 //! - **Thread-safe**: All operations are thread-safe
 //! - **Memory-mapped binary format**: Efficient loading of large rule sets
+//! - **Remote rule management**: Download, cache, and hot-reload rules from URLs
 //!
 //! # Quick Start
 //!
@@ -25,6 +26,40 @@
 //! add_direct_domain(&["example.com"]);
 //! add_proxy_domain(&["api.example.com"]);
 //! ```
+//!
+//! # Remote Rules
+//!
+//! For applications that need to download and cache rules from a remote server,
+//! use [`RemoteRuleManager`]:
+//!
+//! ```ignore
+//! use k2rule::{RemoteRuleManager, Target};
+//! use std::path::Path;
+//!
+//! // Create manager with remote URL and local cache directory
+//! let mut manager = RemoteRuleManager::new(
+//!     "https://example.com/rules.k2r.gz",
+//!     Path::new("/tmp/k2rule-cache"),
+//!     Target::Direct, // fallback when no rule matches
+//! );
+//!
+//! // Initialize: loads from cache or downloads
+//! manager.init()?;
+//!
+//! // Query rules
+//! let target = manager.match_domain("google.com");
+//!
+//! // Check for updates (uses ETag for efficiency)
+//! if manager.update()? {
+//!     println!("Rules updated!");
+//! }
+//! ```
+//!
+//! The remote manager supports:
+//! - Automatic gzip decompression (`.k2r.gz` files)
+//! - ETag-based conditional requests (304 Not Modified)
+//! - Atomic cache updates
+//! - Hot reload without restarting
 //!
 //! # Rule Types
 //!
@@ -69,3 +104,9 @@ pub use global::{
 
 // Re-export GeoIP initialization
 pub use rule::geoip::{init_geoip_database, init_geoip_database_from_bytes, lookup_country};
+
+// Re-export remote rule management
+pub use remote::RemoteRuleManager;
+
+// Re-export binary reader types for advanced usage
+pub use binary::{CachedBinaryReader, CachedReaderConfig};

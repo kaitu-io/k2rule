@@ -84,6 +84,58 @@ assert_eq!(target, Target::Proxy);
 add_direct_domain(&["example.com"]);
 ```
 
+## Remote Rule Management
+
+For applications that need to download and cache rules from a remote server, use `RemoteRuleManager`:
+
+```rust
+use k2rule::{RemoteRuleManager, Target};
+use std::path::Path;
+
+// Create manager with remote URL and local cache directory
+let mut manager = RemoteRuleManager::new(
+    "https://example.com/rules.k2r.gz",
+    Path::new("/tmp/k2rule-cache"),
+    Target::Direct, // fallback when no rule matches
+);
+
+// Initialize: loads from cache or downloads if needed
+manager.init()?;
+
+// Query rules
+let target = manager.match_domain("google.com");
+let target = manager.match_ip("8.8.8.8".parse().unwrap());
+
+// Check for updates (uses ETag for efficiency)
+if manager.update()? {
+    println!("Rules updated and hot-reloaded!");
+}
+```
+
+### Features
+
+- **Gzip compression**: Rule files can be served as `.k2r.gz` for bandwidth efficiency
+- **ETag support**: Conditional requests avoid unnecessary downloads (304 Not Modified)
+- **Atomic updates**: Cache files are updated atomically to prevent corruption
+- **Hot reload**: Rules are reloaded without restarting the application
+- **LRU caching**: Frequently matched domains/IPs are cached for faster lookups
+
+### Custom Configuration
+
+For advanced use cases, configure the LRU cache size:
+
+```rust
+use k2rule::{RemoteRuleManager, CachedReaderConfig, Target};
+
+let config = CachedReaderConfig::with_capacity(2000); // 2000 entries per cache
+let manager = RemoteRuleManager::with_config(
+    "https://example.com/rules.k2r.gz",
+    Path::new("/tmp/cache"),
+    Target::Direct,
+    config,
+);
+```
+
 ## Automatic Updates
 
 This repository uses GitHub Actions to automatically update rules daily at 7:00 AM Beijing time (23:00 UTC). The workflow downloads the latest rules from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and generates binary files.
