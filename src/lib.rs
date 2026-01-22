@@ -38,7 +38,7 @@
 //!
 //! // Create manager with remote URL and local cache directory
 //! let mut manager = RemoteRuleManager::new(
-//!     "https://example.com/rules.k2r.gz",
+//!     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
 //!     Path::new("/tmp/k2rule-cache"),
 //!     Target::Direct, // fallback when no rule matches
 //! );

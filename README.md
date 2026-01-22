@@ -94,7 +94,7 @@ use std::path::Path;
 
 // Create manager with remote URL and local cache directory
 let mut manager = RemoteRuleManager::new(
-    "https://example.com/rules.k2r.gz",
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
     Path::new("/tmp/k2rule-cache"),
     Target::Direct, // fallback when no rule matches
 );
@@ -129,12 +129,28 @@ use k2rule::{RemoteRuleManager, CachedReaderConfig, Target};
 
 let config = CachedReaderConfig::with_capacity(2000); // 2000 entries per cache
 let manager = RemoteRuleManager::with_config(
-    "https://example.com/rules.k2r.gz",
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
     Path::new("/tmp/cache"),
     Target::Direct,
     config,
 );
 ```
+
+### Pre-built Rules
+
+Pre-built binary rule files are available via jsDelivr CDN:
+
+| Rule Set | Description | URL |
+|----------|-------------|-----|
+| `cn_blacklist.k2r.gz` | Blacklist mode: specific sites use proxy, fallback to direct | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz` |
+| `cn_whitelist.k2r.gz` | Whitelist mode: most traffic direct, GFW blocked sites use proxy | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_whitelist.k2r.gz` |
+
+Rules are updated daily from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules).
+
+Source rule files (Clash YAML format) via jsDelivr:
+- `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt`
+- `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt`
+- `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt`
 
 ## Automatic Updates
 

@@ -75,6 +75,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Deploy to release branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create orphan release branch or checkout existing
+          git checkout --orphan release-temp
+
+          # Remove all files except output
+          git rm -rf .
+
+          # Copy generated files to root
+          cp output/*.k2r.gz .
+
+          # Commit and force push
+          git add *.k2r.gz
+          git commit -m "Update rules $(date +'%Y-%m-%d')"
+          git push origin HEAD:release --force
+
   build-and-test:
     runs-on: ${{ matrix.os }}
     strategy:
