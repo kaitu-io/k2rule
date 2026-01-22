@@ -1,0 +1,79 @@
+[package]
+name = "k2rule"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kaitu.io"]
+description = "A high-performance rule-based routing/filtering system with binary index format"
+license = "MIT"
+repository = "https://github.com/kaitu-io/k2rule"
+keywords = ["proxy", "routing", "rules", "clash"]
+categories = ["network-programming"]
+readme = "README.md"
+
+[dependencies]
+# Fast hashing
+ahash = "0.8"
+
+# IP network handling
+ipnet = "2.9"
+
+# Memory-mapped files
+memmap2 = "0.9"
+
+# Fast synchronization primitives
+parking_lot = "0.12"
+
+# Lazy initialization
+once_cell = "1.19"
+
+# YAML parsing for Clash config
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+
+# Checksum calculation
+sha2 = "0.10"
+
+# GeoIP lookup
+maxminddb = "0.24"
+
+# Error handling
+thiserror = "1.0"
+
+# Bit flags for format flags
+bitflags = "2.4"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive"] }
+
+# HTTP client for rule provider downloads
+reqwest = { version = "0.11", features = ["blocking"] }
+
+# Tempfile for mmap from bytes
+tempfile = "3.10"
+
+# LZ4 compression for payload (optional)
+lz4_flex = { version = "0.11", optional = true }
+
+[features]
+default = []
+compression = ["lz4_flex"]
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[lib]
+name = "k2rule"
+path = "src/lib.rs"
+
+[[bin]]
+name = "k2rule-gen"
+path = "src/bin/gen.rs"
+
+[profile.release]
+lto = true
+opt-level = "z"
+strip = true

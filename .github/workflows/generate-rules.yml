@@ -1,0 +1,120 @@
+name: Generate Rules
+
+on:
+  schedule:
+    # Run daily at 7:00 AM Beijing time (23:00 UTC previous day)
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+    # Allow manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Generate rules from local files
+        run: |
+          mkdir -p output
+          ./target/release/k2rule-gen generate-all -o output/ -v
+
+      - name: Download and generate rules from remote
+        run: |
+          ./target/release/k2rule-gen download -o output/ -v
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rule-binaries
+          path: output/*.bin
+          retention-days: 30
+
+      - name: Create release tag
+        id: tag
+        run: |
+          echo "tag=rules-$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Rules ${{ steps.tag.outputs.date }}
+          body: |
+            Automatically generated rule binaries for ${{ steps.tag.outputs.date }}
+
+            ## Files
+            - `cn_blacklist.bin` - CN blacklist rules (Chinese sites direct, others proxy)
+            - `cn_whitelist.bin` - CN whitelist rules (most traffic direct)
+            - `rules.bin` - Combined rules from Loyalsoldier/clash-rules
+          files: output/*.bin
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test --release
+
+      - name: Upload binary (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k2rule-gen-linux
+          path: target/release/k2rule-gen
+
+      - name: Upload binary (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k2rule-gen-macos
+          path: target/release/k2rule-gen
+
+      - name: Upload binary (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k2rule-gen-windows
+          path: target/release/k2rule-gen.exe
