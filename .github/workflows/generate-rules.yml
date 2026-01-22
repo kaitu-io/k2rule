@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rule-binaries
-          path: output/*.bin
+          path: output/*.k2r
           retention-days: 30
 
       - name: Create release tag
@@ -66,10 +66,10 @@ jobs:
             Automatically generated rule binaries for ${{ steps.tag.outputs.date }}
 
             ## Files
-            - `cn_blacklist.bin` - CN blacklist rules (Chinese sites direct, others proxy)
-            - `cn_whitelist.bin` - CN whitelist rules (most traffic direct)
-            - `rules.bin` - Combined rules from Loyalsoldier/clash-rules
-          files: output/*.bin
+            - `cn_blacklist.k2r` - CN blacklist rules (Chinese sites direct, others proxy)
+            - `cn_whitelist.k2r` - CN whitelist rules (most traffic direct)
+            - `rules.k2r` - Combined rules from Loyalsoldier/clash-rules
+          files: output/*.k2r
           draft: false
           prerelease: false
         env:

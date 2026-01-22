@@ -21,10 +21,15 @@
 //! +------------------+
 //! ```
 
+mod cached_reader;
 mod format;
 mod reader;
 pub mod writer;
 
+#[cfg(test)]
+mod tests;
+
+pub use cached_reader::{CacheStats, CachedBinaryReader, CachedReaderConfig};
 pub use format::*;
 pub use reader::BinaryRuleReader;
 pub use writer::{BinaryRuleWriter, IntermediateRules};

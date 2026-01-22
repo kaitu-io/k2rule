@@ -209,19 +209,22 @@ impl BinaryRuleWriter {
         }
 
         // Write suffix array (sorted by hash)
+        // First, calculate cumulative payload offsets
+        let mut payload_offset = 0u32;
         let mut suffix_entries: Vec<_> = rules
             .suffix_domains
             .iter()
-            .enumerate()
-            .map(|(i, (domain, target))| {
+            .map(|(domain, target)| {
                 let hash = fnv1a_hash(domain.as_bytes());
+                let current_offset = payload_offset;
+                payload_offset += domain.len() as u32;
                 (
                     hash,
                     DomainSuffixEntry {
                         hash,
                         target: target.as_u8(),
                         _padding: [0; 3],
-                        payload_offset: i as u32, // Will be updated later
+                        payload_offset: current_offset,
                         domain_len: domain.len() as u16,
                         _padding2: [0; 6],
                     },

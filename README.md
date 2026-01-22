@@ -47,7 +47,7 @@ cargo install --path .
 ### Convert Clash YAML to Binary
 
 ```bash
-k2rule-gen convert -i clash_rules/cn_blacklist.yml -o cn_blacklist.bin
+k2rule-gen convert -i clash_rules/cn_blacklist.yml -o cn_blacklist.k2r
 ```
 
 ### Generate All Rule Sets

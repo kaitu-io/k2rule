@@ -136,17 +136,17 @@ fn generate_all(output_dir: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::
         return Err("clash_rules directory not found".into());
     }
 
-    // Generate cn_blacklist.bin
+    // Generate cn_blacklist.k2r
     let blacklist_path = clash_rules_dir.join("cn_blacklist.yml");
     if blacklist_path.exists() {
-        let output_path = output_dir.join("cn_blacklist.bin");
+        let output_path = output_dir.join("cn_blacklist.k2r");
         convert_file(&blacklist_path, &output_path, verbose)?;
     }
 
-    // Generate cn_whitelist.bin
+    // Generate cn_whitelist.k2r
     let whitelist_path = clash_rules_dir.join("cn_whitelist.yml");
     if whitelist_path.exists() {
-        let output_path = output_dir.join("cn_whitelist.bin");
+        let output_path = output_dir.join("cn_whitelist.k2r");
         convert_file(&whitelist_path, &output_path, verbose)?;
     }
 
@@ -251,7 +251,7 @@ fn download_and_generate(output_dir: &PathBuf, verbose: bool) -> Result<(), Box<
     let mut writer = BinaryRuleWriter::new();
     let binary_data = writer.write(&all_rules)?;
 
-    let output_path = output_dir.join("rules.bin");
+    let output_path = output_dir.join("rules.k2r");
     let mut file = fs::File::create(&output_path)?;
     file.write_all(&binary_data)?;
 

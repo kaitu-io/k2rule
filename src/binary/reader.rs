@@ -80,7 +80,12 @@ impl BinaryRuleReader {
             return Some(target);
         }
 
-        // Check suffix matches
+        // Check suffix matches - first check the domain itself
+        if let Some(target) = self.lookup_suffix_domain(hash, &domain_lower) {
+            return Some(target);
+        }
+
+        // Then check parent domains
         let mut current = domain_lower.as_str();
         while let Some(pos) = current.find('.') {
             current = &current[pos + 1..];
