@@ -46,6 +46,17 @@ impl RuleSet {
         }
     }
 
+    /// Creates a new RuleSet with the specified fallback target.
+    /// This is a kaitu-rules compatible constructor.
+    pub fn with_fallback(fallback: Target) -> Self {
+        let config = RuleConfig {
+            name: "custom".to_string(),
+            display_name: "Custom".to_string(),
+            fallback_target: fallback,
+        };
+        Self::new(config)
+    }
+
     /// Create a new RuleSet by parsing rules from a reader.
     ///
     /// The reader should contain rules in k2rule text format.
@@ -385,5 +396,17 @@ example.com
 
         assert_eq!(ruleset.match_input("unknown.com"), Target::Reject);
         assert_eq!(ruleset.match_input(""), Target::Reject);
+    }
+
+    #[test]
+    fn test_with_fallback_constructor() {
+        let ruleset = RuleSet::with_fallback(Target::Direct);
+        assert_eq!(ruleset.config.fallback_target, Target::Direct);
+
+        let ruleset = RuleSet::with_fallback(Target::Proxy);
+        assert_eq!(ruleset.config.fallback_target, Target::Proxy);
+
+        let ruleset = RuleSet::with_fallback(Target::Reject);
+        assert_eq!(ruleset.config.fallback_target, Target::Reject);
     }
 }
