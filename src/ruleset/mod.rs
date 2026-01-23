@@ -15,7 +15,7 @@ use crate::{RuleType, Target};
 /// RuleSet manages a collection of rules for matching IP addresses and domains.
 ///
 /// Rules are matched in priority order:
-/// 1. Dynamic rules (Direct IP → Direct Domain → Reject Domain → Proxy IP → Proxy Domain)
+/// 1. Dynamic rules (Direct IP → Direct CIDR → Direct Domain → Reject Domain → Proxy IP → Proxy CIDR → Proxy Domain)
 /// 2. Static rules (in the order they were added)
 /// 3. Fallback target (when no rules match)
 pub struct RuleSet {
@@ -27,10 +27,14 @@ pub struct RuleSet {
     direct_domain: RwLock<DomainRule>,
     /// Dynamic direct IP rule
     direct_ip: RwLock<IpRule>,
+    /// Dynamic direct CIDR rule
+    direct_cidr: RwLock<CidrRule>,
     /// Dynamic proxy domain rule
     proxy_domain: RwLock<DomainRule>,
     /// Dynamic proxy IP rule
     proxy_ip: RwLock<IpRule>,
+    /// Dynamic proxy CIDR rule
+    proxy_cidr: RwLock<CidrRule>,
     /// Dynamic reject domain rule
     reject_domain: RwLock<DomainRule>,
 }
@@ -43,8 +47,10 @@ impl RuleSet {
             config,
             direct_domain: RwLock::new(DomainRule::new(Target::Direct)),
             direct_ip: RwLock::new(IpRule::new(Target::Direct)),
+            direct_cidr: RwLock::new(CidrRule::new(Target::Direct)),
             proxy_domain: RwLock::new(DomainRule::new(Target::Proxy)),
             proxy_ip: RwLock::new(IpRule::new(Target::Proxy)),
+            proxy_cidr: RwLock::new(CidrRule::new(Target::Proxy)),
             reject_domain: RwLock::new(DomainRule::new(Target::Reject)),
         }
     }
@@ -179,8 +185,11 @@ impl RuleSet {
         };
 
         // Check dynamic rules first (highest priority)
-        // Order: Direct IP -> Direct Domain -> Reject Domain -> Proxy IP -> Proxy Domain
+        // Order: Direct IP -> Direct CIDR -> Direct Domain -> Reject Domain -> Proxy IP -> Proxy CIDR -> Proxy Domain
         if self.direct_ip.read().match_input(ip, domain) {
+            return Target::Direct;
+        }
+        if self.direct_cidr.read().match_input(ip, domain) {
             return Target::Direct;
         }
         if self.direct_domain.read().match_input(ip, domain) {
@@ -191,6 +200,9 @@ impl RuleSet {
             return Target::Reject;
         }
         if self.proxy_ip.read().match_input(ip, domain) {
+            return Target::Proxy;
+        }
+        if self.proxy_cidr.read().match_input(ip, domain) {
             return Target::Proxy;
         }
         if self.proxy_domain.read().match_input(ip, domain) {
@@ -274,6 +286,30 @@ impl RuleSet {
     pub fn add_reject_domain(&self, domain: &str) {
         let mut rule = self.reject_domain.write();
         let _ = rule.add_pattern(domain);
+    }
+
+    /// Adds a single IP address that routes directly.
+    pub fn add_direct_ip(&self, ip: &str) {
+        let mut rule = self.direct_ip.write();
+        let _ = rule.add_pattern(ip);
+    }
+
+    /// Adds a single IP address that routes through proxy.
+    pub fn add_proxy_ip(&self, ip: &str) {
+        let mut rule = self.proxy_ip.write();
+        let _ = rule.add_pattern(ip);
+    }
+
+    /// Adds a CIDR range that routes directly.
+    pub fn add_direct_cidr(&self, cidr: &str) {
+        let mut rule = self.direct_cidr.write();
+        let _ = rule.add_pattern(cidr);
+    }
+
+    /// Adds a CIDR range that routes through proxy.
+    pub fn add_proxy_cidr(&self, cidr: &str) {
+        let mut rule = self.proxy_cidr.write();
+        let _ = rule.add_pattern(cidr);
     }
 }
 
@@ -453,5 +489,31 @@ example.com
         // Test add_reject_domain (kaitu-rules compatible)
         ruleset.add_reject_domain("blocked.com");
         assert_eq!(ruleset.match_input("blocked.com"), Target::Reject);
+    }
+
+    #[test]
+    fn test_single_item_ip_methods() {
+        let ruleset = RuleSet::with_fallback(Target::Proxy);
+
+        // Test add_direct_ip (single)
+        ruleset.add_direct_ip("192.168.1.1");
+        assert_eq!(ruleset.match_input("192.168.1.1"), Target::Direct);
+
+        // Test add_proxy_ip (single)
+        ruleset.add_proxy_ip("10.0.0.1");
+        assert_eq!(ruleset.match_input("10.0.0.1"), Target::Proxy);
+    }
+
+    #[test]
+    fn test_single_item_cidr_methods() {
+        let ruleset = RuleSet::with_fallback(Target::Proxy);
+
+        // Test add_direct_cidr
+        ruleset.add_direct_cidr("192.168.0.0/16");
+        assert_eq!(ruleset.match_input("192.168.1.100"), Target::Direct);
+
+        // Test add_proxy_cidr
+        ruleset.add_proxy_cidr("10.0.0.0/8");
+        assert_eq!(ruleset.match_input("10.1.2.3"), Target::Proxy);
     }
 }
