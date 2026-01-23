@@ -78,6 +78,7 @@
 
 mod error;
 mod global;
+mod metadata;
 mod rule_type;
 mod target;
 
@@ -107,6 +108,9 @@ pub use rule::geoip::{init_geoip_database, init_geoip_database_from_bytes, looku
 
 // Re-export remote rule management
 pub use remote::RemoteRuleManager;
+
+// Re-export metadata
+pub use metadata::UpdateMetadata;
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};
