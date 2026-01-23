@@ -47,11 +47,7 @@ fn generate_rules(
             1 => Target::Proxy,
             _ => Target::Reject,
         };
-        rules.add_v4_cidr(
-            u32::from_be_bytes([i as u8, 0, 0, 0]),
-            8,
-            target,
-        );
+        rules.add_v4_cidr(u32::from_be_bytes([i as u8, 0, 0, 0]), 8, target);
     }
 
     let mut writer = BinaryRuleWriter::new();
@@ -307,9 +303,8 @@ fn bench_concurrent_access(c: &mut Criterion) {
 
     let data = generate_rules(10_000, 5_000, 100);
     let config = CachedReaderConfig::with_capacity(10_000);
-    let reader = Arc::new(
-        CachedBinaryReader::from_bytes_with_config(data, config, Target::Proxy).unwrap(),
-    );
+    let reader =
+        Arc::new(CachedBinaryReader::from_bytes_with_config(data, config, Target::Proxy).unwrap());
 
     let queries = generate_queries(100, 0.8);
 

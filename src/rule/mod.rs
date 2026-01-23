@@ -1,18 +1,18 @@
 //! Rule types and trait definitions.
 
-mod domain;
+mod application;
 mod cidr;
+mod domain;
 pub mod geoip;
 mod ip;
-mod application;
 
-pub use domain::DomainRule;
+pub use application::ApplicationRule;
 pub use cidr::CidrRule;
+pub use domain::DomainRule;
 pub use geoip::GeoIpRule;
 pub use ip::IpRule;
-pub use application::ApplicationRule;
 
-use crate::{Target, RuleType};
+use crate::{RuleType, Target};
 use std::net::IpAddr;
 
 /// Rule trait defines the interface for all rule types.

@@ -4,9 +4,9 @@ use ahash::AHashSet;
 use parking_lot::RwLock;
 use std::net::IpAddr;
 
+use super::{DynamicRule, Rule};
 use crate::error::IpRuleError;
 use crate::{RuleType, Target};
-use super::{DynamicRule, Rule};
 
 /// IpRule matches exact IP addresses.
 ///
@@ -40,6 +40,16 @@ impl IpRule {
     /// Get the number of IP addresses in this rule.
     pub fn count(&self) -> usize {
         self.ips.read().len()
+    }
+
+    /// Get the number of IP addresses in this rule (alias for count).
+    pub fn len(&self) -> usize {
+        self.count()
+    }
+
+    /// Check if there are no IP addresses in this rule.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Clear all IP addresses from this rule.

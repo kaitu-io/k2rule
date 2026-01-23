@@ -42,7 +42,7 @@ impl RuleSetType {
     }
 
     /// Parse a rule set type from a string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "global" => Some(RuleSetType::Global),
             "cn_blacklist" | "cnblacklist" => Some(RuleSetType::CnBlacklist),
@@ -118,11 +118,11 @@ mod tests {
 
     #[test]
     fn test_from_str() {
-        assert_eq!(RuleSetType::from_str("global"), Some(RuleSetType::Global));
+        assert_eq!(RuleSetType::parse("global"), Some(RuleSetType::Global));
         assert_eq!(
-            RuleSetType::from_str("cn_blacklist"),
+            RuleSetType::parse("cn_blacklist"),
             Some(RuleSetType::CnBlacklist)
         );
-        assert_eq!(RuleSetType::from_str("unknown"), None);
+        assert_eq!(RuleSetType::parse("unknown"), None);
     }
 }

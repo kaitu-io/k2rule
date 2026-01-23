@@ -4,9 +4,9 @@ use ipnet::{Ipv4Net, Ipv6Net};
 use parking_lot::RwLock;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use super::{DynamicRule, Rule};
 use crate::error::CidrRuleError;
 use crate::{RuleType, Target};
-use super::{DynamicRule, Rule};
 
 /// CidrRule matches IP addresses against CIDR network ranges.
 ///
@@ -53,6 +53,16 @@ impl CidrRule {
     /// Get the total number of CIDR patterns.
     pub fn pattern_count(&self) -> usize {
         self.v4_count() + self.v6_count()
+    }
+
+    /// Get the total number of CIDR patterns (alias for pattern_count).
+    pub fn len(&self) -> usize {
+        self.pattern_count()
+    }
+
+    /// Check if there are no CIDR patterns in this rule.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Check if an IPv4 address matches any CIDR range.
