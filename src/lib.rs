@@ -77,6 +77,7 @@
 //! 3. Fallback target (when no rules match)
 
 mod error;
+mod geoip_manager;
 mod global;
 mod metadata;
 mod rule_type;
@@ -111,6 +112,9 @@ pub use remote::RemoteRuleManager;
 
 // Re-export metadata
 pub use metadata::UpdateMetadata;
+
+// Re-export GeoIP manager
+pub use geoip_manager::{GeoIpManager, DEFAULT_GEOIP_UPDATE_INTERVAL, DEFAULT_GEOIP_URL};
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};
