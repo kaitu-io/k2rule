@@ -311,6 +311,96 @@ impl RuleSet {
         let mut rule = self.proxy_cidr.write();
         let _ = rule.add_pattern(cidr);
     }
+
+    /// Matches a host (IP or domain). Alias for match_input.
+    /// kaitu-rules compatible method.
+    pub fn match_host(&self, host: &str) -> Target {
+        self.match_input(host)
+    }
+
+    /// Matches a domain only (does not parse as IP).
+    /// kaitu-rules compatible method.
+    pub fn match_domain(&self, domain: &str) -> Target {
+        // Check dynamic rules first (in priority order)
+        // Direct domain
+        {
+            let direct = self.direct_domain.read();
+            if direct.match_input(None, domain) {
+                return Target::Direct;
+            }
+        }
+        // Reject domain
+        {
+            let reject = self.reject_domain.read();
+            if reject.match_input(None, domain) {
+                return Target::Reject;
+            }
+        }
+        // Proxy domain
+        {
+            let proxy = self.proxy_domain.read();
+            if proxy.match_input(None, domain) {
+                return Target::Proxy;
+            }
+        }
+        // Static rules (domain-type only)
+        {
+            let rules = self.rules.read();
+            for rule in rules.iter() {
+                if rule.rule_type() == RuleType::Domain && rule.match_input(None, domain) {
+                    return rule.target();
+                }
+            }
+        }
+        self.config.fallback_target
+    }
+
+    /// Matches an IP address only.
+    /// kaitu-rules compatible method.
+    pub fn match_ip(&self, ip: IpAddr) -> Target {
+        let ip_str = ip.to_string();
+        // Check dynamic IP rules
+        {
+            let direct = self.direct_ip.read();
+            if direct.match_input(Some(ip), &ip_str) {
+                return Target::Direct;
+            }
+        }
+        {
+            let proxy = self.proxy_ip.read();
+            if proxy.match_input(Some(ip), &ip_str) {
+                return Target::Proxy;
+            }
+        }
+        // Check CIDR rules
+        {
+            let direct = self.direct_cidr.read();
+            if direct.match_input(Some(ip), &ip_str) {
+                return Target::Direct;
+            }
+        }
+        {
+            let proxy = self.proxy_cidr.read();
+            if proxy.match_input(Some(ip), &ip_str) {
+                return Target::Proxy;
+            }
+        }
+        // Static rules (IP and CIDR types)
+        {
+            let rules = self.rules.read();
+            for rule in rules.iter() {
+                match rule.rule_type() {
+                    RuleType::IpCidr | RuleType::IpMatch | RuleType::GeoIP => {
+                        if rule.match_input(Some(ip), &ip_str) {
+                            return rule.target();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.config.fallback_target
+    }
 }
 
 /// Parse header parameters from a string like "name=foo,rule=DOMAIN,target=PROXY"
@@ -515,5 +605,28 @@ example.com
         // Test add_proxy_cidr
         ruleset.add_proxy_cidr("10.0.0.0/8");
         assert_eq!(ruleset.match_input("10.1.2.3"), Target::Proxy);
+    }
+
+    #[test]
+    fn test_match_methods() {
+        let ruleset = RuleSet::with_fallback(Target::Proxy);
+        ruleset.add_direct_domain("example.com");
+        ruleset.add_direct_ip("192.168.1.1");
+
+        // match_host is alias for match_input
+        assert_eq!(ruleset.match_host("example.com"), Target::Direct);
+        assert_eq!(ruleset.match_host("192.168.1.1"), Target::Direct);
+        assert_eq!(ruleset.match_host("unknown.com"), Target::Proxy);
+
+        // match_domain only matches domains
+        assert_eq!(ruleset.match_domain("example.com"), Target::Direct);
+        assert_eq!(ruleset.match_domain("unknown.com"), Target::Proxy);
+
+        // match_ip only matches IPs
+        use std::net::IpAddr;
+        let ip: IpAddr = "192.168.1.1".parse().unwrap();
+        assert_eq!(ruleset.match_ip(ip), Target::Direct);
+        let unknown_ip: IpAddr = "1.1.1.1".parse().unwrap();
+        assert_eq!(ruleset.match_ip(unknown_ip), Target::Proxy);
     }
 }
