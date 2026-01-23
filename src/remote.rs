@@ -12,8 +12,10 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use crate::binary::{CachedBinaryReader, CachedReaderConfig, MAGIC};
+use crate::metadata::UpdateMetadata;
 use crate::{Result, Target};
 
 /// Remote rule manager for downloading and caching rule files.
@@ -55,6 +57,10 @@ pub struct RemoteRuleManager {
     fallback: Target,
     /// Reader configuration
     reader_config: CachedReaderConfig,
+    /// Update interval for periodic checks
+    update_interval: Duration,
+    /// Path to metadata file for tracking updates
+    metadata_path: PathBuf,
 }
 
 impl RemoteRuleManager {
@@ -66,13 +72,16 @@ impl RemoteRuleManager {
     /// * `cache_dir` - Directory to store cached rule files
     /// * `fallback` - Target to return when no rule matches or rules unavailable
     pub fn new(url: &str, cache_dir: &Path, fallback: Target) -> Self {
+        let cache_path = cache_dir.to_path_buf();
         Self {
             url: url.to_string(),
-            cache_dir: cache_dir.to_path_buf(),
+            cache_dir: cache_path.clone(),
             reader: None,
             etag: None,
             fallback,
             reader_config: CachedReaderConfig::default(),
+            update_interval: Duration::from_secs(86400), // 1 day default
+            metadata_path: cache_path.join("rules.k2r.meta"),
         }
     }
 
@@ -83,14 +92,25 @@ impl RemoteRuleManager {
         fallback: Target,
         reader_config: CachedReaderConfig,
     ) -> Self {
+        let cache_path = cache_dir.to_path_buf();
         Self {
             url: url.to_string(),
-            cache_dir: cache_dir.to_path_buf(),
+            cache_dir: cache_path.clone(),
             reader: None,
             etag: None,
             fallback,
             reader_config,
+            update_interval: Duration::from_secs(86400), // 1 day default
+            metadata_path: cache_path.join("rules.k2r.meta"),
         }
+    }
+
+    /// Set a custom update interval for periodic checks.
+    ///
+    /// Default is 1 day (86400 seconds).
+    pub fn with_update_interval(mut self, interval: Duration) -> Self {
+        self.update_interval = interval;
+        self
     }
 
     /// Get the path to the cached rule file.
@@ -156,14 +176,10 @@ impl RemoteRuleManager {
         let response = request.call().map_err(|e| match e {
             ureq::Error::Status(304, _) => {
                 // Not Modified - return early
-                return crate::Error::Config("304 Not Modified".to_string());
+                crate::Error::Config("304 Not Modified".to_string())
             }
-            ureq::Error::Status(code, _) => {
-                crate::Error::Config(format!("HTTP error: {}", code))
-            }
-            ureq::Error::Transport(t) => {
-                crate::Error::Config(format!("Transport error: {}", t))
-            }
+            ureq::Error::Status(code, _) => crate::Error::Config(format!("HTTP error: {}", code)),
+            ureq::Error::Transport(t) => crate::Error::Config(format!("Transport error: {}", t)),
         });
 
         // Handle 304 Not Modified
@@ -187,7 +203,41 @@ impl RemoteRuleManager {
         // Download and decompress
         self.process_response(response)?;
 
+        // Save metadata after successful update
+        let meta = UpdateMetadata::now_with_etag(self.etag.clone());
+        meta.save(&self.metadata_path)?;
+
         Ok(true)
+    }
+
+    /// Check if an update is needed based on the configured interval.
+    ///
+    /// Returns `true` if the update interval has elapsed since the last update.
+    pub fn needs_update(&self) -> bool {
+        let meta = UpdateMetadata::load(&self.metadata_path).unwrap_or_default();
+        meta.needs_update(self.update_interval)
+    }
+
+    /// Check for updates and download only if the update interval has elapsed.
+    ///
+    /// This combines `needs_update()` with `update()` for convenience.
+    ///
+    /// Returns `true` if rules were updated, `false` if no update was needed or available.
+    pub fn update_if_needed(&mut self) -> Result<bool> {
+        if self.needs_update() {
+            self.update()
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Get the last update time.
+    ///
+    /// Returns `None` if the rules have never been updated.
+    pub fn last_updated(&self) -> Option<SystemTime> {
+        UpdateMetadata::load(&self.metadata_path)
+            .ok()
+            .and_then(|m| m.last_updated)
     }
 
     /// Download and update rules (ignoring ETag).
@@ -203,6 +253,11 @@ impl RemoteRuleManager {
         }
 
         self.process_response(response)?;
+
+        // Save metadata after successful download
+        let meta = UpdateMetadata::now_with_etag(self.etag.clone());
+        meta.save(&self.metadata_path)?;
+
         Ok(())
     }
 
@@ -252,7 +307,10 @@ impl RemoteRuleManager {
                 raw_len
             );
         } else {
-            log::info!("Downloaded and saved rules: {} bytes", decompressed_data.len());
+            log::info!(
+                "Downloaded and saved rules: {} bytes",
+                decompressed_data.len()
+            );
         }
 
         // Hot reload into reader
@@ -272,7 +330,7 @@ impl RemoteRuleManager {
             return Err(crate::Error::Config("File too small".to_string()));
         }
 
-        if &data[..MAGIC.len()] != &MAGIC {
+        if data[..MAGIC.len()] != MAGIC {
             return Err(crate::Error::InvalidMagic);
         }
 
@@ -415,7 +473,10 @@ mod tests {
             Target::Direct,
         );
 
-        assert_eq!(manager.rules_path(), PathBuf::from("/cache/k2rule/rules.k2r"));
+        assert_eq!(
+            manager.rules_path(),
+            PathBuf::from("/cache/k2rule/rules.k2r")
+        );
         assert_eq!(
             manager.etag_path(),
             PathBuf::from("/cache/k2rule/rules.k2r.etag")
@@ -432,10 +493,7 @@ mod tests {
 
         assert!(!manager.is_initialized());
         assert_eq!(manager.match_domain("google.com"), Target::Direct);
-        assert_eq!(
-            manager.match_ip("8.8.8.8".parse().unwrap()),
-            Target::Direct
-        );
+        assert_eq!(manager.match_ip("8.8.8.8".parse().unwrap()), Target::Direct);
     }
 
     #[test]
@@ -448,11 +506,8 @@ mod tests {
         let rules_data = create_test_rules();
         fs::write(&rules_path, &rules_data).unwrap();
 
-        let mut manager = RemoteRuleManager::new(
-            "http://example.com/rules.k2r.gz",
-            cache_dir,
-            Target::Proxy,
-        );
+        let mut manager =
+            RemoteRuleManager::new("http://example.com/rules.k2r.gz", cache_dir, Target::Proxy);
 
         manager.init().unwrap();
 
@@ -473,5 +528,66 @@ mod tests {
 
         assert_eq!(manager.url(), "http://test");
         assert_eq!(manager.fallback(), Target::Direct);
+    }
+
+    #[test]
+    fn test_remote_manager_update_interval() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager =
+            RemoteRuleManager::new("https://example.com/rules.k2r", dir.path(), Target::Proxy)
+                .with_update_interval(Duration::from_secs(3600));
+
+        // No metadata exists, so needs_update should be true
+        assert!(manager.needs_update());
+        // No updates have happened, so last_updated should be None
+        assert!(manager.last_updated().is_none());
+    }
+
+    #[test]
+    fn test_remote_manager_needs_update_with_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager =
+            RemoteRuleManager::new("https://example.com/rules.k2r", dir.path(), Target::Proxy)
+                .with_update_interval(Duration::from_secs(3600)); // 1 hour
+
+        // Simulate a recent update by creating metadata
+        let meta = UpdateMetadata::now();
+        meta.save(dir.path().join("rules.k2r.meta")).unwrap();
+
+        // Should not need update since we just "updated"
+        assert!(!manager.needs_update());
+        assert!(manager.last_updated().is_some());
+    }
+
+    #[test]
+    fn test_remote_manager_needs_update_expired() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager =
+            RemoteRuleManager::new("https://example.com/rules.k2r", dir.path(), Target::Proxy)
+                .with_update_interval(Duration::from_secs(60)); // 1 minute
+
+        // Create metadata from 2 minutes ago
+        let meta = UpdateMetadata {
+            last_updated: Some(SystemTime::now() - Duration::from_secs(120)),
+            etag: None,
+        };
+        meta.save(dir.path().join("rules.k2r.meta")).unwrap();
+
+        // Should need update since interval has elapsed
+        assert!(manager.needs_update());
+    }
+
+    #[test]
+    fn test_metadata_path() {
+        let manager = RemoteRuleManager::new(
+            "http://example.com/rules.k2r.gz",
+            Path::new("/cache/k2rule"),
+            Target::Direct,
+        );
+
+        assert_eq!(
+            manager.metadata_path,
+            PathBuf::from("/cache/k2rule/rules.k2r.meta")
+        );
     }
 }

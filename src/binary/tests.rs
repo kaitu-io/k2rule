@@ -78,7 +78,11 @@ fn test_header_counts_are_correct() {
     rules.add_v4_cidr(0x0A000000, 8, Target::Direct); // 10.0.0.0/8
 
     // Add 1 IPv6 CIDR
-    rules.add_v6_cidr([0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 7, Target::Direct);
+    rules.add_v6_cidr(
+        [0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        7,
+        Target::Direct,
+    );
 
     let reader = write_and_read(&rules);
     let header = reader.header();
@@ -254,11 +258,7 @@ fn test_exact_takes_priority_over_suffix() {
 fn test_ipv4_cidr_match() {
     let mut rules = IntermediateRules::new();
     // 192.168.0.0/16
-    rules.add_v4_cidr(
-        u32::from_be_bytes([192, 168, 0, 0]),
-        16,
-        Target::Direct,
-    );
+    rules.add_v4_cidr(u32::from_be_bytes([192, 168, 0, 0]), 16, Target::Direct);
 
     let reader = write_and_read(&rules);
 
@@ -538,10 +538,7 @@ fn test_domain_with_numbers() {
 
     let reader = write_and_read(&rules);
 
-    assert_eq!(
-        reader.match_domain("123.example.com"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("123.example.com"), Some(Target::Direct));
     assert_eq!(reader.match_domain("sub.456.com"), Some(Target::Proxy));
 }
 
@@ -684,22 +681,13 @@ fn test_clash_domain_starting_with_number() {
 
     let reader = write_and_read(&rules);
 
-    assert_eq!(
-        reader.match_domain("0.avmarket.rs"),
-        Some(Target::Reject)
-    );
+    assert_eq!(reader.match_domain("0.avmarket.rs"), Some(Target::Reject));
     assert_eq!(
         reader.match_domain("sub.0.avmarket.rs"),
         Some(Target::Reject)
     );
-    assert_eq!(
-        reader.match_domain("000webhost.com"),
-        Some(Target::Reject)
-    );
-    assert_eq!(
-        reader.match_domain("123rf.com"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("000webhost.com"), Some(Target::Reject));
+    assert_eq!(reader.match_domain("123rf.com"), Some(Target::Direct));
 }
 
 #[test]
@@ -714,15 +702,9 @@ fn test_clash_tld_only_suffix() {
 
     // TLD suffix should match any domain ending with that TLD
     assert_eq!(reader.match_domain("whitehouse.gov"), Some(Target::Proxy));
-    assert_eq!(
-        reader.match_domain("www.army.mil"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("www.army.mil"), Some(Target::Proxy));
     assert_eq!(reader.match_domain("mit.edu"), Some(Target::Proxy));
-    assert_eq!(
-        reader.match_domain("cs.stanford.edu"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("cs.stanford.edu"), Some(Target::Proxy));
 
     // Should not match unrelated domains
     assert_eq!(reader.match_domain("example.com"), None);
@@ -740,10 +722,7 @@ fn test_clash_country_code_tld() {
 
     assert_eq!(reader.match_domain("google.jp"), Some(Target::Proxy));
     assert_eq!(reader.match_domain("bbc.co.uk"), Some(Target::Proxy));
-    assert_eq!(
-        reader.match_domain("amazon.de"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("amazon.de"), Some(Target::Proxy));
 }
 
 #[test]
@@ -758,26 +737,14 @@ fn test_clash_special_tld() {
 
     let reader = write_and_read(&rules);
 
-    assert_eq!(
-        reader.match_domain("server.internal"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("server.internal"), Some(Target::Direct));
     assert_eq!(
         reader.match_domain("mypc.localdomain"),
         Some(Target::Direct)
     );
-    assert_eq!(
-        reader.match_domain("app.localhost"),
-        Some(Target::Direct)
-    );
-    assert_eq!(
-        reader.match_domain("printer.local"),
-        Some(Target::Direct)
-    );
-    assert_eq!(
-        reader.match_domain("nas.lan"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("app.localhost"), Some(Target::Direct));
+    assert_eq!(reader.match_domain("printer.local"), Some(Target::Direct));
+    assert_eq!(reader.match_domain("nas.lan"), Some(Target::Direct));
 }
 
 #[test]
@@ -838,10 +805,7 @@ fn test_clash_deep_subdomain_chain() {
     );
 
     // Other subdomains should match suffix
-    assert_eq!(
-        reader.match_domain("other.akadns.net"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("other.akadns.net"), Some(Target::Proxy));
 }
 
 #[test]
@@ -856,20 +820,11 @@ fn test_clash_cdn_numbered_subdomains() {
     let reader = write_and_read(&rules);
 
     // Exact matches
-    assert_eq!(
-        reader.match_domain("a1.mzstatic.com"),
-        Some(Target::Direct)
-    );
-    assert_eq!(
-        reader.match_domain("a2.mzstatic.com"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("a1.mzstatic.com"), Some(Target::Direct));
+    assert_eq!(reader.match_domain("a2.mzstatic.com"), Some(Target::Direct));
 
     // Suffix match for others
-    assert_eq!(
-        reader.match_domain("a99.mzstatic.com"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("a99.mzstatic.com"), Some(Target::Proxy));
     assert_eq!(
         reader.match_domain("apps.mzstatic.com"),
         Some(Target::Proxy)
@@ -975,10 +930,7 @@ fn test_clash_long_random_subdomain() {
     // From reject.txt: '+.00cae06d30.720df8c8c9.com' (random hash-like subdomains)
     let mut rules = IntermediateRules::new();
     rules.add_domain(".00cae06d30.720df8c8c9.com", Target::Reject);
-    rules.add_domain(
-        ".079301eaff0975107716716fd1cb0dcd.com",
-        Target::Reject,
-    );
+    rules.add_domain(".079301eaff0975107716716fd1cb0dcd.com", Target::Reject);
 
     let reader = write_and_read(&rules);
 
@@ -1008,14 +960,8 @@ fn test_clash_mixed_numeric_alpha_domain() {
     let reader = write_and_read(&rules);
 
     assert_eq!(reader.match_domain("1e100.net"), Some(Target::Proxy));
-    assert_eq!(
-        reader.match_domain("www.1e100.net"),
-        Some(Target::Proxy)
-    );
-    assert_eq!(
-        reader.match_domain("1point3acres.com"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("www.1e100.net"), Some(Target::Proxy));
+    assert_eq!(reader.match_domain("1point3acres.com"), Some(Target::Proxy));
     assert_eq!(reader.match_domain("4chan.com"), Some(Target::Proxy));
     assert_eq!(reader.match_domain("500px.com"), Some(Target::Proxy));
 }
@@ -1031,16 +977,10 @@ fn test_clash_router_domains() {
 
     let reader = write_and_read(&rules);
 
-    assert_eq!(
-        reader.match_domain("router.asus.com"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("router.asus.com"), Some(Target::Direct));
     assert_eq!(reader.match_domain("tplogin.cn"), Some(Target::Direct));
     assert_eq!(reader.match_domain("miwifi.com"), Some(Target::Direct));
-    assert_eq!(
-        reader.match_domain("routerlogin.com"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("routerlogin.com"), Some(Target::Direct));
     assert_eq!(
         reader.match_domain("www.routerlogin.com"),
         Some(Target::Direct)
@@ -1077,10 +1017,7 @@ fn test_clash_plex_direct() {
 
     let reader = write_and_read(&rules);
 
-    assert_eq!(
-        reader.match_domain("plex.direct"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("plex.direct"), Some(Target::Direct));
     assert_eq!(
         reader.match_domain("192-168-1-100.abc123.plex.direct"),
         Some(Target::Direct)
@@ -1097,14 +1034,8 @@ fn test_clash_co_uk_style_domain() {
     let reader = write_and_read(&rules);
 
     assert_eq!(reader.match_domain("bbc.co.uk"), Some(Target::Proxy));
-    assert_eq!(
-        reader.match_domain("www.bbc.co.uk"),
-        Some(Target::Proxy)
-    );
-    assert_eq!(
-        reader.match_domain("taobao.com.cn"),
-        Some(Target::Direct)
-    );
+    assert_eq!(reader.match_domain("www.bbc.co.uk"), Some(Target::Proxy));
+    assert_eq!(reader.match_domain("taobao.com.cn"), Some(Target::Direct));
     assert_eq!(
         reader.match_domain("www.taobao.com.cn"),
         Some(Target::Direct)
@@ -1121,10 +1052,7 @@ fn test_clash_overlapping_suffixes() {
     let reader = write_and_read(&rules);
 
     // More specific suffix ".google.com" should match first
-    assert_eq!(
-        reader.match_domain("www.google.com"),
-        Some(Target::Proxy)
-    );
+    assert_eq!(reader.match_domain("www.google.com"), Some(Target::Proxy));
     assert_eq!(reader.match_domain("google.com"), Some(Target::Proxy));
 
     // Other .com domains should match ".com"

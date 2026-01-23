@@ -16,15 +16,15 @@
 //! # Quick Start
 //!
 //! ```ignore
-//! use k2rule::{match_rule, add_direct_domain, add_proxy_domain, Target};
+//! use k2rule::{match_rule, add_direct_domains, add_proxy_domains, Target};
 //!
 //! // Match a domain or IP
 //! let target = match_rule("www.google.com");
 //! assert_eq!(target, Target::Proxy);
 //!
-//! // Add dynamic rules
-//! add_direct_domain(&["example.com"]);
-//! add_proxy_domain(&["api.example.com"]);
+//! // Add dynamic rules (batch)
+//! add_direct_domains(&["example.com"]);
+//! add_proxy_domains(&["api.example.com"]);
 //! ```
 //!
 //! # Remote Rules
@@ -77,7 +77,9 @@
 //! 3. Fallback target (when no rules match)
 
 mod error;
+mod geoip_manager;
 mod global;
+mod metadata;
 mod rule_type;
 mod target;
 
@@ -97,7 +99,7 @@ pub use ruleset::{RuleConfig, RuleSet, RuleSetType};
 
 // Re-export global API functions
 pub use global::{
-    add_direct_domain, add_direct_ip, add_proxy_domain, add_proxy_ip, ensure_initialized,
+    add_direct_domains, add_direct_ips, add_proxy_domains, add_proxy_ips, ensure_initialized,
     get_available_rule_types, is_initialized, match_rule, reload_ruleset,
     reload_ruleset_from_reader, reload_ruleset_with_type, validate_rule_type,
 };
@@ -107,6 +109,12 @@ pub use rule::geoip::{init_geoip_database, init_geoip_database_from_bytes, looku
 
 // Re-export remote rule management
 pub use remote::RemoteRuleManager;
+
+// Re-export metadata
+pub use metadata::UpdateMetadata;
+
+// Re-export GeoIP manager
+pub use geoip_manager::{GeoIpManager, DEFAULT_GEOIP_UPDATE_INTERVAL, DEFAULT_GEOIP_URL};
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};

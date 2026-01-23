@@ -61,7 +61,8 @@ impl ClashConverter {
     /// Load provider rules from YAML content.
     pub fn load_provider(&mut self, name: &str, content: &str) -> Result<()> {
         let payload: ProviderPayload = serde_yaml::from_str(content)?;
-        self.provider_rules.insert(name.to_string(), payload.payload);
+        self.provider_rules
+            .insert(name.to_string(), payload.payload);
         Ok(())
     }
 
@@ -183,10 +184,8 @@ impl ClashConverter {
                     }
 
                     // Convert Clash suffix format to our format
-                    let domain = if rule.starts_with("+.") {
-                        format!(".{}", &rule[2..])
-                    } else if rule.starts_with('.') {
-                        rule.to_string()
+                    let domain = if let Some(suffix) = rule.strip_prefix("+.") {
+                        format!(".{}", suffix)
                     } else {
                         rule.to_string()
                     };

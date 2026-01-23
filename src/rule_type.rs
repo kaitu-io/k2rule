@@ -19,7 +19,7 @@ pub enum RuleType {
 
 impl RuleType {
     /// Parse a rule type from a string (case-insensitive).
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
             "DOMAIN" => Some(RuleType::Domain),
             "IP-CIDR" | "IPCIDR" => Some(RuleType::IpCidr),
@@ -96,14 +96,14 @@ mod tests {
 
     #[test]
     fn test_rule_type_from_str() {
-        assert_eq!(RuleType::from_str("DOMAIN"), Some(RuleType::Domain));
-        assert_eq!(RuleType::from_str("domain"), Some(RuleType::Domain));
-        assert_eq!(RuleType::from_str("IP-CIDR"), Some(RuleType::IpCidr));
-        assert_eq!(RuleType::from_str("IPCIDR"), Some(RuleType::IpCidr));
-        assert_eq!(RuleType::from_str("GEOIP"), Some(RuleType::GeoIP));
-        assert_eq!(RuleType::from_str("IP-MATCH"), Some(RuleType::IpMatch));
-        assert_eq!(RuleType::from_str("APPLICATION"), Some(RuleType::Application));
-        assert_eq!(RuleType::from_str("UNKNOWN"), None);
+        assert_eq!(RuleType::parse("DOMAIN"), Some(RuleType::Domain));
+        assert_eq!(RuleType::parse("domain"), Some(RuleType::Domain));
+        assert_eq!(RuleType::parse("IP-CIDR"), Some(RuleType::IpCidr));
+        assert_eq!(RuleType::parse("IPCIDR"), Some(RuleType::IpCidr));
+        assert_eq!(RuleType::parse("GEOIP"), Some(RuleType::GeoIP));
+        assert_eq!(RuleType::parse("IP-MATCH"), Some(RuleType::IpMatch));
+        assert_eq!(RuleType::parse("APPLICATION"), Some(RuleType::Application));
+        assert_eq!(RuleType::parse("UNKNOWN"), None);
     }
 
     #[test]

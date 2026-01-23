@@ -35,8 +35,8 @@ impl IntermediateRules {
     /// Add a domain pattern.
     pub fn add_domain(&mut self, pattern: &str, target: Target) {
         let pattern = pattern.trim().to_lowercase();
-        if pattern.starts_with('.') {
-            self.suffix_domains.push((pattern[1..].to_string(), target));
+        if let Some(suffix) = pattern.strip_prefix('.') {
+            self.suffix_domains.push((suffix.to_string(), target));
         } else {
             self.exact_domains.push((pattern, target));
         }
@@ -132,17 +132,14 @@ impl BinaryRuleWriter {
 
         // Write header
         let header_bytes = unsafe {
-            std::slice::from_raw_parts(
-                &header as *const BinaryHeader as *const u8,
-                HEADER_SIZE,
-            )
+            std::slice::from_raw_parts(&header as *const BinaryHeader as *const u8, HEADER_SIZE)
         };
         self.buffer[..HEADER_SIZE].copy_from_slice(header_bytes);
 
         // Compute checksum (hash everything except the checksum field)
         let mut hasher = Sha256::new();
         hasher.update(&self.buffer[0..0x18]); // Before checksum
-        hasher.update(&[0u8; 32]); // Zero placeholder for checksum
+        hasher.update([0u8; 32]); // Zero placeholder for checksum
         hasher.update(&self.buffer[0x38..]); // After checksum
         let checksum = hasher.finalize();
 
