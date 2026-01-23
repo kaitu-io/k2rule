@@ -115,43 +115,43 @@ pub fn match_rule(ip_or_domain: &str) -> Target {
     }
 }
 
-/// Add IP addresses that should route directly.
-pub fn add_direct_ip(ips: &[&str]) {
+/// Add IP addresses that should route directly (batch method).
+pub fn add_direct_ips(ips: &[&str]) {
     ensure_initialized();
 
     let guard = GLOBAL_RULESET.read();
     if let Some(ruleset) = guard.as_ref() {
-        ruleset.add_direct_ip(ips);
+        ruleset.add_direct_ips(ips);
     }
 }
 
-/// Add domains that should route directly.
-pub fn add_direct_domain(domains: &[&str]) {
+/// Add domains that should route directly (batch method).
+pub fn add_direct_domains(domains: &[&str]) {
     ensure_initialized();
 
     let guard = GLOBAL_RULESET.read();
     if let Some(ruleset) = guard.as_ref() {
-        ruleset.add_direct_domain(domains);
+        ruleset.add_direct_domains(domains);
     }
 }
 
-/// Add IP addresses that should route through proxy.
-pub fn add_proxy_ip(ips: &[&str]) {
+/// Add IP addresses that should route through proxy (batch method).
+pub fn add_proxy_ips(ips: &[&str]) {
     ensure_initialized();
 
     let guard = GLOBAL_RULESET.read();
     if let Some(ruleset) = guard.as_ref() {
-        ruleset.add_proxy_ip(ips);
+        ruleset.add_proxy_ips(ips);
     }
 }
 
-/// Add domains that should route through proxy.
-pub fn add_proxy_domain(domains: &[&str]) {
+/// Add domains that should route through proxy (batch method).
+pub fn add_proxy_domains(domains: &[&str]) {
     ensure_initialized();
 
     let guard = GLOBAL_RULESET.read();
     if let Some(ruleset) = guard.as_ref() {
-        ruleset.add_proxy_domain(domains);
+        ruleset.add_proxy_domains(domains);
     }
 }
 

@@ -16,15 +16,15 @@
 //! # Quick Start
 //!
 //! ```ignore
-//! use k2rule::{match_rule, add_direct_domain, add_proxy_domain, Target};
+//! use k2rule::{match_rule, add_direct_domains, add_proxy_domains, Target};
 //!
 //! // Match a domain or IP
 //! let target = match_rule("www.google.com");
 //! assert_eq!(target, Target::Proxy);
 //!
-//! // Add dynamic rules
-//! add_direct_domain(&["example.com"]);
-//! add_proxy_domain(&["api.example.com"]);
+//! // Add dynamic rules (batch)
+//! add_direct_domains(&["example.com"]);
+//! add_proxy_domains(&["api.example.com"]);
 //! ```
 //!
 //! # Remote Rules
@@ -97,7 +97,7 @@ pub use ruleset::{RuleConfig, RuleSet, RuleSetType};
 
 // Re-export global API functions
 pub use global::{
-    add_direct_domain, add_direct_ip, add_proxy_domain, add_proxy_ip, ensure_initialized,
+    add_direct_domains, add_direct_ips, add_proxy_domains, add_proxy_ips, ensure_initialized,
     get_available_rule_types, is_initialized, match_rule, reload_ruleset,
     reload_ruleset_from_reader, reload_ruleset_with_type, validate_rule_type,
 };

@@ -15,7 +15,7 @@ use crate::{RuleType, Target};
 /// RuleSet manages a collection of rules for matching IP addresses and domains.
 ///
 /// Rules are matched in priority order:
-/// 1. Dynamic rules (Direct IP → Direct Domain → Proxy IP → Proxy Domain)
+/// 1. Dynamic rules (Direct IP → Direct Domain → Reject Domain → Proxy IP → Proxy Domain)
 /// 2. Static rules (in the order they were added)
 /// 3. Fallback target (when no rules match)
 pub struct RuleSet {
@@ -31,6 +31,8 @@ pub struct RuleSet {
     proxy_domain: RwLock<DomainRule>,
     /// Dynamic proxy IP rule
     proxy_ip: RwLock<IpRule>,
+    /// Dynamic reject domain rule
+    reject_domain: RwLock<DomainRule>,
 }
 
 impl RuleSet {
@@ -43,6 +45,7 @@ impl RuleSet {
             direct_ip: RwLock::new(IpRule::new(Target::Direct)),
             proxy_domain: RwLock::new(DomainRule::new(Target::Proxy)),
             proxy_ip: RwLock::new(IpRule::new(Target::Proxy)),
+            reject_domain: RwLock::new(DomainRule::new(Target::Reject)),
         }
     }
 
@@ -176,12 +179,16 @@ impl RuleSet {
         };
 
         // Check dynamic rules first (highest priority)
-        // Order: Direct IP -> Direct Domain -> Proxy IP -> Proxy Domain
+        // Order: Direct IP -> Direct Domain -> Reject Domain -> Proxy IP -> Proxy Domain
         if self.direct_ip.read().match_input(ip, domain) {
             return Target::Direct;
         }
         if self.direct_domain.read().match_input(ip, domain) {
             return Target::Direct;
+        }
+        // Check dynamic reject domain rules
+        if self.reject_domain.read().match_input(ip, domain) {
+            return Target::Reject;
         }
         if self.proxy_ip.read().match_input(ip, domain) {
             return Target::Proxy;
@@ -216,36 +223,57 @@ impl RuleSet {
         self.rules.write().push(rule);
     }
 
-    /// Add domains that should route directly.
-    pub fn add_direct_domain(&self, domains: &[&str]) {
+    /// Add multiple domains that should route directly (batch method).
+    pub fn add_direct_domains(&self, domains: &[&str]) {
         let mut rule = self.direct_domain.write();
         for domain in domains {
             let _ = rule.add_pattern(domain);
         }
     }
 
-    /// Add domains that should route through proxy.
-    pub fn add_proxy_domain(&self, domains: &[&str]) {
+    /// Add multiple domains that should route through proxy (batch method).
+    pub fn add_proxy_domains(&self, domains: &[&str]) {
         let mut rule = self.proxy_domain.write();
         for domain in domains {
             let _ = rule.add_pattern(domain);
         }
     }
 
-    /// Add IP addresses that should route directly.
-    pub fn add_direct_ip(&self, ips: &[&str]) {
+    /// Add multiple IP addresses that should route directly (batch method).
+    pub fn add_direct_ips(&self, ips: &[&str]) {
         let rule = self.direct_ip.read();
         for ip in ips {
             rule.add_ip(ip);
         }
     }
 
-    /// Add IP addresses that should route through proxy.
-    pub fn add_proxy_ip(&self, ips: &[&str]) {
+    /// Add multiple IP addresses that should route through proxy (batch method).
+    pub fn add_proxy_ips(&self, ips: &[&str]) {
         let rule = self.proxy_ip.read();
         for ip in ips {
             rule.add_ip(ip);
         }
+    }
+
+    /// Adds a single domain that routes directly.
+    /// kaitu-rules compatible single-item method.
+    pub fn add_direct_domain(&self, domain: &str) {
+        let mut rule = self.direct_domain.write();
+        let _ = rule.add_pattern(domain);
+    }
+
+    /// Adds a single domain that routes through proxy.
+    /// kaitu-rules compatible single-item method.
+    pub fn add_proxy_domain(&self, domain: &str) {
+        let mut rule = self.proxy_domain.write();
+        let _ = rule.add_pattern(domain);
+    }
+
+    /// Adds a single domain that gets rejected.
+    /// kaitu-rules compatible method.
+    pub fn add_reject_domain(&self, domain: &str) {
+        let mut rule = self.reject_domain.write();
+        let _ = rule.add_pattern(domain);
     }
 }
 
@@ -365,7 +393,7 @@ google.com
         ruleset.add_rule(Arc::new(domain_rule));
 
         // Add dynamic rule for google.com -> DIRECT
-        ruleset.add_direct_domain(&["google.com"]);
+        ruleset.add_direct_domains(&["google.com"]);
 
         // Dynamic rule should have higher priority
         assert_eq!(ruleset.match_input("google.com"), Target::Direct);
@@ -408,5 +436,22 @@ example.com
 
         let ruleset = RuleSet::with_fallback(Target::Reject);
         assert_eq!(ruleset.config.fallback_target, Target::Reject);
+    }
+
+    #[test]
+    fn test_single_item_domain_methods() {
+        let ruleset = RuleSet::with_fallback(Target::Direct);
+
+        // Test add_direct_domain (single, kaitu-rules compatible)
+        ruleset.add_direct_domain("example.com");
+        assert_eq!(ruleset.match_input("example.com"), Target::Direct);
+
+        // Test add_proxy_domain (single, kaitu-rules compatible)
+        ruleset.add_proxy_domain("proxy.com");
+        assert_eq!(ruleset.match_input("proxy.com"), Target::Proxy);
+
+        // Test add_reject_domain (kaitu-rules compatible)
+        ruleset.add_reject_domain("blocked.com");
+        assert_eq!(ruleset.match_input("blocked.com"), Target::Reject);
     }
 }
