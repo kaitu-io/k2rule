@@ -5,8 +5,10 @@ mod config;
 pub use config::{RuleConfig, RuleSetType};
 
 use parking_lot::RwLock;
+use quick_cache::sync::Cache;
 use std::io::{BufRead, BufReader, Read};
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::rule::{CidrRule, DomainRule, DynamicRule, GeoIpRule, IpRule, Rule};
@@ -37,6 +39,18 @@ pub struct RuleSet {
     proxy_cidr: RwLock<CidrRule>,
     /// Dynamic reject domain rule
     reject_domain: RwLock<DomainRule>,
+    /// LRU cache for domain lookups
+    domain_cache: Option<Cache<u64, Target>>,
+    /// LRU cache for IP lookups
+    ip_cache: Option<Cache<u64, Target>>,
+    /// Domain cache hit counter
+    domain_cache_hits: AtomicU64,
+    /// Domain cache miss counter
+    domain_cache_misses: AtomicU64,
+    /// IP cache hit counter
+    ip_cache_hits: AtomicU64,
+    /// IP cache miss counter
+    ip_cache_misses: AtomicU64,
 }
 
 impl RuleSet {
@@ -52,6 +66,34 @@ impl RuleSet {
             proxy_ip: RwLock::new(IpRule::new(Target::Proxy)),
             proxy_cidr: RwLock::new(CidrRule::new(Target::Proxy)),
             reject_domain: RwLock::new(DomainRule::new(Target::Reject)),
+            domain_cache: None,
+            ip_cache: None,
+            domain_cache_hits: AtomicU64::new(0),
+            domain_cache_misses: AtomicU64::new(0),
+            ip_cache_hits: AtomicU64::new(0),
+            ip_cache_misses: AtomicU64::new(0),
+        }
+    }
+
+    /// Creates a new RuleSet with LRU cache enabled.
+    /// The cache_size parameter specifies the maximum number of entries in each cache.
+    pub fn with_cache_size(config: RuleConfig, cache_size: usize) -> Self {
+        Self {
+            rules: RwLock::new(Vec::new()),
+            config,
+            direct_domain: RwLock::new(DomainRule::new(Target::Direct)),
+            direct_ip: RwLock::new(IpRule::new(Target::Direct)),
+            direct_cidr: RwLock::new(CidrRule::new(Target::Direct)),
+            proxy_domain: RwLock::new(DomainRule::new(Target::Proxy)),
+            proxy_ip: RwLock::new(IpRule::new(Target::Proxy)),
+            proxy_cidr: RwLock::new(CidrRule::new(Target::Proxy)),
+            reject_domain: RwLock::new(DomainRule::new(Target::Reject)),
+            domain_cache: Some(Cache::new(cache_size)),
+            ip_cache: Some(Cache::new(cache_size)),
+            domain_cache_hits: AtomicU64::new(0),
+            domain_cache_misses: AtomicU64::new(0),
+            ip_cache_hits: AtomicU64::new(0),
+            ip_cache_misses: AtomicU64::new(0),
         }
     }
 
@@ -241,6 +283,8 @@ impl RuleSet {
         for domain in domains {
             let _ = rule.add_pattern(domain);
         }
+        drop(rule);
+        self.clear_domain_cache();
     }
 
     /// Add multiple domains that should route through proxy (batch method).
@@ -249,6 +293,8 @@ impl RuleSet {
         for domain in domains {
             let _ = rule.add_pattern(domain);
         }
+        drop(rule);
+        self.clear_domain_cache();
     }
 
     /// Add multiple IP addresses that should route directly (batch method).
@@ -257,6 +303,8 @@ impl RuleSet {
         for ip in ips {
             rule.add_ip(ip);
         }
+        drop(rule);
+        self.clear_ip_cache();
     }
 
     /// Add multiple IP addresses that should route through proxy (batch method).
@@ -265,6 +313,8 @@ impl RuleSet {
         for ip in ips {
             rule.add_ip(ip);
         }
+        drop(rule);
+        self.clear_ip_cache();
     }
 
     /// Adds a single domain that routes directly.
@@ -272,6 +322,8 @@ impl RuleSet {
     pub fn add_direct_domain(&self, domain: &str) {
         let mut rule = self.direct_domain.write();
         let _ = rule.add_pattern(domain);
+        drop(rule);
+        self.clear_domain_cache();
     }
 
     /// Adds a single domain that routes through proxy.
@@ -279,6 +331,8 @@ impl RuleSet {
     pub fn add_proxy_domain(&self, domain: &str) {
         let mut rule = self.proxy_domain.write();
         let _ = rule.add_pattern(domain);
+        drop(rule);
+        self.clear_domain_cache();
     }
 
     /// Adds a single domain that gets rejected.
@@ -286,30 +340,40 @@ impl RuleSet {
     pub fn add_reject_domain(&self, domain: &str) {
         let mut rule = self.reject_domain.write();
         let _ = rule.add_pattern(domain);
+        drop(rule);
+        self.clear_domain_cache();
     }
 
     /// Adds a single IP address that routes directly.
     pub fn add_direct_ip(&self, ip: &str) {
         let mut rule = self.direct_ip.write();
         let _ = rule.add_pattern(ip);
+        drop(rule);
+        self.clear_ip_cache();
     }
 
     /// Adds a single IP address that routes through proxy.
     pub fn add_proxy_ip(&self, ip: &str) {
         let mut rule = self.proxy_ip.write();
         let _ = rule.add_pattern(ip);
+        drop(rule);
+        self.clear_ip_cache();
     }
 
     /// Adds a CIDR range that routes directly.
     pub fn add_direct_cidr(&self, cidr: &str) {
         let mut rule = self.direct_cidr.write();
         let _ = rule.add_pattern(cidr);
+        drop(rule);
+        self.clear_ip_cache();
     }
 
     /// Adds a CIDR range that routes through proxy.
     pub fn add_proxy_cidr(&self, cidr: &str) {
         let mut rule = self.proxy_cidr.write();
         let _ = rule.add_pattern(cidr);
+        drop(rule);
+        self.clear_ip_cache();
     }
 
     /// Matches a host (IP or domain). Alias for match_input.
@@ -321,6 +385,23 @@ impl RuleSet {
     /// Matches a domain only (does not parse as IP).
     /// kaitu-rules compatible method.
     pub fn match_domain(&self, domain: &str) -> Target {
+        // Check cache first if enabled
+        if let Some(ref cache) = self.domain_cache {
+            let key = hash_key(domain);
+            if let Some(target) = cache.get(&key) {
+                self.domain_cache_hits.fetch_add(1, Ordering::Relaxed);
+                return target;
+            }
+            self.domain_cache_misses.fetch_add(1, Ordering::Relaxed);
+            let result = self.match_domain_uncached(domain);
+            cache.insert(key, result);
+            return result;
+        }
+        self.match_domain_uncached(domain)
+    }
+
+    /// Internal uncached domain matching logic.
+    fn match_domain_uncached(&self, domain: &str) -> Target {
         // Check dynamic rules first (in priority order)
         // Direct domain
         {
@@ -359,29 +440,46 @@ impl RuleSet {
     /// kaitu-rules compatible method.
     pub fn match_ip(&self, ip: IpAddr) -> Target {
         let ip_str = ip.to_string();
+        // Check cache first if enabled
+        if let Some(ref cache) = self.ip_cache {
+            let key = hash_key(&ip_str);
+            if let Some(target) = cache.get(&key) {
+                self.ip_cache_hits.fetch_add(1, Ordering::Relaxed);
+                return target;
+            }
+            self.ip_cache_misses.fetch_add(1, Ordering::Relaxed);
+            let result = self.match_ip_uncached(ip, &ip_str);
+            cache.insert(key, result);
+            return result;
+        }
+        self.match_ip_uncached(ip, &ip_str)
+    }
+
+    /// Internal uncached IP matching logic.
+    fn match_ip_uncached(&self, ip: IpAddr, ip_str: &str) -> Target {
         // Check dynamic IP rules
         {
             let direct = self.direct_ip.read();
-            if direct.match_input(Some(ip), &ip_str) {
+            if direct.match_input(Some(ip), ip_str) {
                 return Target::Direct;
             }
         }
         {
             let proxy = self.proxy_ip.read();
-            if proxy.match_input(Some(ip), &ip_str) {
+            if proxy.match_input(Some(ip), ip_str) {
                 return Target::Proxy;
             }
         }
         // Check CIDR rules
         {
             let direct = self.direct_cidr.read();
-            if direct.match_input(Some(ip), &ip_str) {
+            if direct.match_input(Some(ip), ip_str) {
                 return Target::Direct;
             }
         }
         {
             let proxy = self.proxy_cidr.read();
-            if proxy.match_input(Some(ip), &ip_str) {
+            if proxy.match_input(Some(ip), ip_str) {
                 return Target::Proxy;
             }
         }
@@ -391,7 +489,7 @@ impl RuleSet {
             for rule in rules.iter() {
                 match rule.rule_type() {
                     RuleType::IpCidr | RuleType::IpMatch | RuleType::GeoIP => {
-                        if rule.match_input(Some(ip), &ip_str) {
+                        if rule.match_input(Some(ip), ip_str) {
                             return rule.target();
                         }
                     }
@@ -401,6 +499,87 @@ impl RuleSet {
         }
         self.config.fallback_target
     }
+
+    /// Returns cache hit rates for (domain_cache, ip_cache).
+    /// Returns NaN for caches that haven't been used or are disabled.
+    pub fn cache_stats(&self) -> (f64, f64) {
+        let domain_hits = self.domain_cache_hits.load(Ordering::Relaxed);
+        let domain_misses = self.domain_cache_misses.load(Ordering::Relaxed);
+        let domain_total = domain_hits + domain_misses;
+        let domain_rate = if domain_total == 0 {
+            f64::NAN
+        } else {
+            domain_hits as f64 / domain_total as f64
+        };
+
+        let ip_hits = self.ip_cache_hits.load(Ordering::Relaxed);
+        let ip_misses = self.ip_cache_misses.load(Ordering::Relaxed);
+        let ip_total = ip_hits + ip_misses;
+        let ip_rate = if ip_total == 0 {
+            f64::NAN
+        } else {
+            ip_hits as f64 / ip_total as f64
+        };
+
+        (domain_rate, ip_rate)
+    }
+
+    /// Clears all caches and resets hit/miss counters.
+    pub fn clear_cache(&self) {
+        if let Some(ref cache) = self.domain_cache {
+            cache.clear();
+        }
+        if let Some(ref cache) = self.ip_cache {
+            cache.clear();
+        }
+        self.domain_cache_hits.store(0, Ordering::Relaxed);
+        self.domain_cache_misses.store(0, Ordering::Relaxed);
+        self.ip_cache_hits.store(0, Ordering::Relaxed);
+        self.ip_cache_misses.store(0, Ordering::Relaxed);
+    }
+
+    /// Returns the total number of rules across all rule types.
+    pub fn rule_count(&self) -> usize {
+        let direct_domain = self.direct_domain.read().pattern_count();
+        let proxy_domain = self.proxy_domain.read().pattern_count();
+        let reject_domain = self.reject_domain.read().pattern_count();
+        let direct_ip = self.direct_ip.read().count();
+        let proxy_ip = self.proxy_ip.read().count();
+        let direct_cidr = self.direct_cidr.read().pattern_count();
+        let proxy_cidr = self.proxy_cidr.read().pattern_count();
+        let static_rules = self.rules.read().len();
+
+        direct_domain
+            + proxy_domain
+            + reject_domain
+            + direct_ip
+            + proxy_ip
+            + direct_cidr
+            + proxy_cidr
+            + static_rules
+    }
+
+    /// Clears the domain cache (used after adding domain rules).
+    fn clear_domain_cache(&self) {
+        if let Some(ref cache) = self.domain_cache {
+            cache.clear();
+        }
+    }
+
+    /// Clears the IP cache (used after adding IP/CIDR rules).
+    fn clear_ip_cache(&self) {
+        if let Some(ref cache) = self.ip_cache {
+            cache.clear();
+        }
+    }
+}
+
+/// Compute a hash key for cache lookup using ahash.
+fn hash_key(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = ahash::AHasher::default();
+    s.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Parse header parameters from a string like "name=foo,rule=DOMAIN,target=PROXY"
@@ -628,5 +807,83 @@ example.com
         assert_eq!(ruleset.match_ip(ip), Target::Direct);
         let unknown_ip: IpAddr = "1.1.1.1".parse().unwrap();
         assert_eq!(ruleset.match_ip(unknown_ip), Target::Proxy);
+    }
+
+    #[test]
+    fn test_cache_infrastructure() {
+        let ruleset = RuleSet::with_cache_size(
+            RuleConfig {
+                name: "test".to_string(),
+                display_name: "Test".to_string(),
+                fallback_target: Target::Proxy,
+            },
+            100,
+        );
+        ruleset.add_direct_domain("cached.com");
+        assert_eq!(ruleset.match_domain("cached.com"), Target::Direct);
+        assert_eq!(ruleset.match_domain("cached.com"), Target::Direct);
+        let (domain_hit_rate, _ip_hit_rate) = ruleset.cache_stats();
+        assert!(domain_hit_rate > 0.0);
+        ruleset.clear_cache();
+        // After clear, stats should be reset
+        let (domain_hit_rate_after, _) = ruleset.cache_stats();
+        assert!(domain_hit_rate_after.is_nan());
+    }
+
+    #[test]
+    fn test_rule_count() {
+        let ruleset = RuleSet::with_fallback(Target::Proxy);
+        assert_eq!(ruleset.rule_count(), 0);
+        ruleset.add_direct_domain("a.com");
+        ruleset.add_proxy_domain("b.com");
+        ruleset.add_direct_ip("1.1.1.1");
+        assert!(ruleset.rule_count() >= 3);
+    }
+
+    #[test]
+    fn test_cache_hit_tracking() {
+        let ruleset = RuleSet::with_cache_size(
+            RuleConfig {
+                name: "test".to_string(),
+                display_name: "Test".to_string(),
+                fallback_target: Target::Proxy,
+            },
+            100,
+        );
+        ruleset.add_direct_domain("test.com");
+        ruleset.match_domain("test.com"); // miss
+        let (hit_rate, _) = ruleset.cache_stats();
+        assert_eq!(hit_rate, 0.0);
+        ruleset.match_domain("test.com"); // hit
+        let (hit_rate, _) = ruleset.cache_stats();
+        assert_eq!(hit_rate, 0.5);
+        ruleset.match_domain("test.com"); // hit
+        let (hit_rate, _) = ruleset.cache_stats();
+        assert!((hit_rate - 0.666).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_cache_invalidation_on_rule_add() {
+        let ruleset = RuleSet::with_cache_size(
+            RuleConfig {
+                name: "test".to_string(),
+                display_name: "Test".to_string(),
+                fallback_target: Target::Proxy,
+            },
+            100,
+        );
+        assert_eq!(ruleset.match_domain("test.com"), Target::Proxy);
+        ruleset.add_direct_domain("test.com");
+        assert_eq!(ruleset.match_domain("test.com"), Target::Direct);
+    }
+
+    #[test]
+    fn test_default_ruleset_no_cache() {
+        let ruleset = RuleSet::with_fallback(Target::Proxy);
+        ruleset.match_domain("test.com");
+        ruleset.match_domain("test.com");
+        let (domain_rate, ip_rate) = ruleset.cache_stats();
+        assert!(domain_rate.is_nan());
+        assert!(ip_rate.is_nan());
     }
 }
