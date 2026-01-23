@@ -6,9 +6,9 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Arc;
 
+use super::{DynamicRule, Rule};
 use crate::error::GeoIpRuleError;
 use crate::{RuleType, Target};
-use super::{DynamicRule, Rule};
 
 /// Global GeoIP database reader.
 static GEOIP_READER: once_cell::sync::OnceCell<Arc<maxminddb::Reader<Vec<u8>>>> =
@@ -18,8 +18,8 @@ static GEOIP_READER: once_cell::sync::OnceCell<Arc<maxminddb::Reader<Vec<u8>>>> 
 ///
 /// This should be called once at startup.
 pub fn init_geoip_database(path: &Path) -> Result<(), crate::Error> {
-    let reader = maxminddb::Reader::open_readfile(path)
-        .map_err(|e| crate::Error::GeoIp(e.to_string()))?;
+    let reader =
+        maxminddb::Reader::open_readfile(path).map_err(|e| crate::Error::GeoIp(e.to_string()))?;
 
     GEOIP_READER
         .set(Arc::new(reader))
@@ -30,8 +30,8 @@ pub fn init_geoip_database(path: &Path) -> Result<(), crate::Error> {
 
 /// Initialize the global GeoIP database from bytes.
 pub fn init_geoip_database_from_bytes(data: Vec<u8>) -> Result<(), crate::Error> {
-    let reader = maxminddb::Reader::from_source(data)
-        .map_err(|e| crate::Error::GeoIp(e.to_string()))?;
+    let reader =
+        maxminddb::Reader::from_source(data).map_err(|e| crate::Error::GeoIp(e.to_string()))?;
 
     GEOIP_READER
         .set(Arc::new(reader))

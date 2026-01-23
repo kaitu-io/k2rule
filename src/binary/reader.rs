@@ -132,9 +132,8 @@ impl BinaryRuleReader {
             return None;
         }
 
-        let domain_header = unsafe {
-            &*(self.mmap[domain_idx_offset..].as_ptr() as *const DomainIndexHeader)
-        };
+        let domain_header =
+            unsafe { &*(self.mmap[domain_idx_offset..].as_ptr() as *const DomainIndexHeader) };
 
         let bucket_count = domain_header.exact_count as usize;
         if bucket_count == 0 {
@@ -151,9 +150,8 @@ impl BinaryRuleReader {
                 return None;
             }
 
-            let entry = unsafe {
-                &*(self.mmap[entry_offset..].as_ptr() as *const DomainExactEntry)
-            };
+            let entry =
+                unsafe { &*(self.mmap[entry_offset..].as_ptr() as *const DomainExactEntry) };
 
             if entry.hash == 0 {
                 return None; // Empty slot
@@ -176,9 +174,8 @@ impl BinaryRuleReader {
         }
 
         let domain_idx_offset = header.domain_index_offset as usize;
-        let domain_header = unsafe {
-            &*(self.mmap[domain_idx_offset..].as_ptr() as *const DomainIndexHeader)
-        };
+        let domain_header =
+            unsafe { &*(self.mmap[domain_idx_offset..].as_ptr() as *const DomainIndexHeader) };
 
         let suffix_count = domain_header.suffix_count as usize;
         if suffix_count == 0 {
@@ -204,9 +201,10 @@ impl BinaryRuleReader {
                 let domain_len = entry.domain_len as usize;
 
                 if payload_offset + domain_len <= self.mmap.len() {
-                    let stored_suffix =
-                        std::str::from_utf8(&self.mmap[payload_offset..payload_offset + domain_len])
-                            .ok()?;
+                    let stored_suffix = std::str::from_utf8(
+                        &self.mmap[payload_offset..payload_offset + domain_len],
+                    )
+                    .ok()?;
 
                     if stored_suffix == suffix {
                         return Target::from_u8(entry.target);
@@ -247,9 +245,8 @@ impl BinaryRuleReader {
         }
 
         let cidr_idx_offset = header.cidr_index_offset as usize;
-        let cidr_header = unsafe {
-            &*(self.mmap[cidr_idx_offset..].as_ptr() as *const CidrIndexHeader)
-        };
+        let cidr_header =
+            unsafe { &*(self.mmap[cidr_idx_offset..].as_ptr() as *const CidrIndexHeader) };
 
         let v4_count = cidr_header.v4_count as usize;
         if v4_count == 0 {
@@ -299,9 +296,8 @@ impl BinaryRuleReader {
         }
 
         let cidr_idx_offset = header.cidr_index_offset as usize;
-        let cidr_header = unsafe {
-            &*(self.mmap[cidr_idx_offset..].as_ptr() as *const CidrIndexHeader)
-        };
+        let cidr_header =
+            unsafe { &*(self.mmap[cidr_idx_offset..].as_ptr() as *const CidrIndexHeader) };
 
         let v6_count = cidr_header.v6_count as usize;
         if v6_count == 0 {

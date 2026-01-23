@@ -56,10 +56,7 @@ pub fn reload_ruleset_with_type(rule_type: RuleSetType) -> Result<()> {
 }
 
 /// Reload the global rule set from a reader.
-pub fn reload_ruleset_from_reader<R: std::io::Read>(
-    reader: R,
-    config: RuleConfig,
-) -> Result<()> {
+pub fn reload_ruleset_from_reader<R: std::io::Read>(reader: R, config: RuleConfig) -> Result<()> {
     let ruleset = RuleSet::from_reader(reader, config);
 
     // Add default local IP rules
@@ -157,7 +154,7 @@ pub fn add_proxy_domains(domains: &[&str]) {
 
 /// Validate a rule set type name.
 pub fn validate_rule_type(rule_type: &str) -> Result<()> {
-    if RuleSetType::from_str(rule_type).is_none() {
+    if RuleSetType::parse(rule_type).is_none() {
         return Err(Error::InvalidRuleType(rule_type.to_string()));
     }
     Ok(())

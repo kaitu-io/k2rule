@@ -2,8 +2,8 @@
 
 use std::net::IpAddr;
 
-use crate::{RuleType, Target};
 use super::Rule;
+use crate::{RuleType, Target};
 
 /// ApplicationRule matches based on application type.
 ///

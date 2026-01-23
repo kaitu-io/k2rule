@@ -67,8 +67,8 @@ impl UpdateMetadata {
             return Ok(Self::default());
         }
         let content = fs::read_to_string(path)?;
-        let meta: Self =
-            serde_json::from_str(&content).map_err(|e| crate::error::Error::Config(e.to_string()))?;
+        let meta: Self = serde_json::from_str(&content)
+            .map_err(|e| crate::error::Error::Config(e.to_string()))?;
         Ok(meta)
     }
 
@@ -89,7 +89,9 @@ impl UpdateMetadata {
         match self.last_updated {
             None => true,
             Some(last) => {
-                let elapsed = SystemTime::now().duration_since(last).unwrap_or(Duration::MAX);
+                let elapsed = SystemTime::now()
+                    .duration_since(last)
+                    .unwrap_or(Duration::MAX);
                 elapsed >= interval
             }
         }

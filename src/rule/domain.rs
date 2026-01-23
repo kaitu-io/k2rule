@@ -4,9 +4,9 @@ use ahash::AHashMap;
 use parking_lot::RwLock;
 use std::net::IpAddr;
 
+use super::{DynamicRule, Rule};
 use crate::error::DomainRuleError;
 use crate::{RuleType, Target};
-use super::{DynamicRule, Rule};
 
 /// DomainRule matches domain names using exact or suffix matching.
 ///
@@ -54,6 +54,16 @@ impl DomainRule {
     /// Get the total number of patterns.
     pub fn pattern_count(&self) -> usize {
         self.exact_count() + self.suffix_count()
+    }
+
+    /// Get the total number of patterns (alias for pattern_count).
+    pub fn len(&self) -> usize {
+        self.pattern_count()
+    }
+
+    /// Check if there are no patterns in this rule.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Check if a domain matches any exact pattern.
@@ -125,9 +135,8 @@ impl DynamicRule for DomainRule {
             return Err(DomainRuleError::InvalidPattern(pattern));
         }
 
-        if pattern.starts_with('.') {
+        if let Some(suffix) = pattern.strip_prefix('.') {
             // Suffix match: store without leading dot
-            let suffix = &pattern[1..];
             if suffix.is_empty() || !suffix.contains('.') {
                 return Err(DomainRuleError::InvalidPattern(pattern));
             }

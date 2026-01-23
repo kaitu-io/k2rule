@@ -176,14 +176,10 @@ impl RemoteRuleManager {
         let response = request.call().map_err(|e| match e {
             ureq::Error::Status(304, _) => {
                 // Not Modified - return early
-                return crate::Error::Config("304 Not Modified".to_string());
+                crate::Error::Config("304 Not Modified".to_string())
             }
-            ureq::Error::Status(code, _) => {
-                crate::Error::Config(format!("HTTP error: {}", code))
-            }
-            ureq::Error::Transport(t) => {
-                crate::Error::Config(format!("Transport error: {}", t))
-            }
+            ureq::Error::Status(code, _) => crate::Error::Config(format!("HTTP error: {}", code)),
+            ureq::Error::Transport(t) => crate::Error::Config(format!("Transport error: {}", t)),
         });
 
         // Handle 304 Not Modified
@@ -311,7 +307,10 @@ impl RemoteRuleManager {
                 raw_len
             );
         } else {
-            log::info!("Downloaded and saved rules: {} bytes", decompressed_data.len());
+            log::info!(
+                "Downloaded and saved rules: {} bytes",
+                decompressed_data.len()
+            );
         }
 
         // Hot reload into reader
@@ -331,7 +330,7 @@ impl RemoteRuleManager {
             return Err(crate::Error::Config("File too small".to_string()));
         }
 
-        if &data[..MAGIC.len()] != &MAGIC {
+        if data[..MAGIC.len()] != MAGIC {
             return Err(crate::Error::InvalidMagic);
         }
 
@@ -474,7 +473,10 @@ mod tests {
             Target::Direct,
         );
 
-        assert_eq!(manager.rules_path(), PathBuf::from("/cache/k2rule/rules.k2r"));
+        assert_eq!(
+            manager.rules_path(),
+            PathBuf::from("/cache/k2rule/rules.k2r")
+        );
         assert_eq!(
             manager.etag_path(),
             PathBuf::from("/cache/k2rule/rules.k2r.etag")
@@ -491,10 +493,7 @@ mod tests {
 
         assert!(!manager.is_initialized());
         assert_eq!(manager.match_domain("google.com"), Target::Direct);
-        assert_eq!(
-            manager.match_ip("8.8.8.8".parse().unwrap()),
-            Target::Direct
-        );
+        assert_eq!(manager.match_ip("8.8.8.8".parse().unwrap()), Target::Direct);
     }
 
     #[test]
@@ -507,11 +506,8 @@ mod tests {
         let rules_data = create_test_rules();
         fs::write(&rules_path, &rules_data).unwrap();
 
-        let mut manager = RemoteRuleManager::new(
-            "http://example.com/rules.k2r.gz",
-            cache_dir,
-            Target::Proxy,
-        );
+        let mut manager =
+            RemoteRuleManager::new("http://example.com/rules.k2r.gz", cache_dir, Target::Proxy);
 
         manager.init().unwrap();
 

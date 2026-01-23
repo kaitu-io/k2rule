@@ -140,10 +140,7 @@ impl GeoIpManager {
         let meta = UpdateMetadata::now();
         meta.save(self.metadata_path())?;
 
-        log::info!(
-            "Downloaded GeoIP database: {} bytes",
-            decompressed.len()
-        );
+        log::info!("Downloaded GeoIP database: {} bytes", decompressed.len());
 
         Ok(())
     }
@@ -213,17 +210,13 @@ mod tests {
     fn test_geoip_manager_metadata_path() {
         let dir = tempdir().unwrap();
         let manager = GeoIpManager::new(dir.path());
-        assert_eq!(
-            manager.metadata_path(),
-            dir.path().join("geoip.mmdb.meta")
-        );
+        assert_eq!(manager.metadata_path(), dir.path().join("geoip.mmdb.meta"));
     }
 
     #[test]
     fn test_geoip_manager_needs_update_expired() {
         let dir = tempdir().unwrap();
-        let manager =
-            GeoIpManager::new(dir.path()).with_update_interval(Duration::from_secs(60)); // 1 minute
+        let manager = GeoIpManager::new(dir.path()).with_update_interval(Duration::from_secs(60)); // 1 minute
 
         // Create metadata from 2 minutes ago
         let meta = UpdateMetadata {
