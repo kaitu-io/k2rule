@@ -5,6 +5,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use k2rule::binary::{BinaryRuleWriter, IntermediateRules};
 use k2rule::converter::{ClashConfig, ClashConverter};
+use k2rule::porn_heuristic::is_porn_heuristic;
 use k2rule::Target;
 use serde::Deserialize;
 use std::fs;
@@ -278,7 +279,7 @@ fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::err
     let blocklist_content = blocklist_response.text()?;
 
     // Step 3: Parse domains
-    let domains: Vec<&str> = blocklist_content
+    let all_domains: Vec<&str> = blocklist_content
         .lines()
         .filter(|line| {
             let line = line.trim();
@@ -287,15 +288,36 @@ fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::err
         .collect();
 
     if verbose {
-        println!("Parsed {} domains", domains.len());
+        println!("Parsed {} domains from source", all_domains.len());
     }
 
-    // Step 4: Build IntermediateRules
+    // Step 4: Filter out domains that can be detected by heuristic
+    // This significantly reduces file size since heuristic detection is built-in
+    let filtered_domains: Vec<&str> = all_domains
+        .iter()
+        .filter(|domain| !is_porn_heuristic(domain))
+        .copied()
+        .collect();
+
+    let heuristic_detected = all_domains.len() - filtered_domains.len();
+
+    if verbose {
+        println!(
+            "Heuristic detected: {} domains (will be handled by built-in detection)",
+            heuristic_detected
+        );
+        println!(
+            "Remaining domains: {} (will be stored in binary file)",
+            filtered_domains.len()
+        );
+    }
+
+    // Step 5: Build IntermediateRules
     // Only use suffix match - it matches both the domain itself and all subdomains
     // e.g., ".pornhub.com" matches "pornhub.com", "www.pornhub.com", etc.
     let mut rules = IntermediateRules::new();
 
-    for domain in &domains {
+    for domain in &filtered_domains {
         // Suffix match with leading dot matches the domain and all subdomains
         rules.add_domain(&format!(".{}", domain), Target::Reject);
     }
@@ -343,10 +365,22 @@ fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::err
     fs::write(&version_path, &meta.blocklist.updated)?;
 
     println!(
-        "Successfully generated porn domain list: {:?} ({} domains, source: {})",
-        output,
-        domains.len(),
-        meta.blocklist.updated
+        "Successfully generated porn domain list: {:?}",
+        output
+    );
+    println!(
+        "  Source: {} ({} total domains)",
+        meta.blocklist.updated,
+        all_domains.len()
+    );
+    println!(
+        "  Heuristic detected: {} domains (built-in, no storage needed)",
+        heuristic_detected
+    );
+    println!(
+        "  Stored in file: {} domains ({:.1}% reduction)",
+        filtered_domains.len(),
+        (heuristic_detected as f64 / all_domains.len() as f64) * 100.0
     );
 
     Ok(())

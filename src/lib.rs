@@ -108,6 +108,7 @@ mod target;
 pub mod binary;
 pub mod converter;
 pub mod porn;
+pub mod porn_heuristic;
 pub mod remote;
 pub mod rule;
 pub mod ruleset;

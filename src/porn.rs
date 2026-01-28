@@ -35,6 +35,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::binary::{BinaryRuleReader, MAGIC};
+use crate::porn_heuristic::is_porn_heuristic;
 use crate::Result;
 
 /// Porn domain checker.
@@ -313,8 +314,14 @@ impl PornDomainChecker {
 
     /// Check if a domain is a known porn site.
     ///
-    /// Returns `true` if the domain matches the porn domain list.
-    /// Returns `false` if not initialized or no match found.
+    /// This method uses a two-stage detection:
+    /// 1. **Heuristic check** (fast, built-in): Checks for known patterns like
+    ///    keywords (porn, xxx, sex), .xxx TLD, etc.
+    /// 2. **Binary file lookup** (if heuristic didn't match): Checks the
+    ///    downloaded domain list.
+    ///
+    /// Returns `true` if the domain matches either detection method.
+    /// Returns `false` if no match found.
     ///
     /// # Example
     ///
@@ -324,10 +331,24 @@ impl PornDomainChecker {
     /// }
     /// ```
     pub fn is_porn(&self, domain: &str) -> bool {
+        // First, try fast heuristic detection (no file lookup needed)
+        if is_porn_heuristic(domain) {
+            return true;
+        }
+
+        // Fall back to binary file lookup
         match &self.reader {
             Some(reader) => reader.match_domain(domain).is_some(),
             None => false,
         }
+    }
+
+    /// Check if a domain is porn using ONLY heuristic detection.
+    ///
+    /// This is useful when you want fast detection without loading the full list.
+    /// Note: This may miss some domains that are only in the binary file.
+    pub fn is_porn_heuristic_only(domain: &str) -> bool {
+        is_porn_heuristic(domain)
     }
 
     /// Check if the checker has been initialized.
@@ -438,11 +459,17 @@ mod tests {
     }
 
     #[test]
-    fn test_not_initialized_returns_false() {
+    fn test_not_initialized_heuristic_still_works() {
         let checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
 
         assert!(!checker.is_initialized());
-        assert!(!checker.is_porn("pornhub.com"));
+        // Heuristic detection works even without initialization
+        assert!(checker.is_porn("pornhub.com"), "heuristic should detect porn keyword");
+        assert!(checker.is_porn("example.xxx"), "heuristic should detect .xxx TLD");
+        // Non-heuristic domains won't be detected without initialization
+        // Use a domain that doesn't contain any heuristic keywords
+        assert!(!checker.is_porn("some-random-site.net"), "non-heuristic domain needs file");
+        assert!(!checker.is_porn("google.com"), "safe domain should not match");
     }
 
     #[test]
@@ -491,30 +518,58 @@ mod tests {
     }
 
     /// Test that suffix match works for both root domain and subdomains.
-    /// This is critical because production uses only suffix match (.domain.com).
+    /// Uses domains that are NOT detected by heuristic to test binary file matching.
     #[test]
     fn test_suffix_match_covers_root_and_subdomains() {
         let mut checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
-        let data = create_test_porn_rules();
+
+        // Create test rules with a domain that won't be caught by heuristic
+        let mut rules = IntermediateRules::new();
+        rules.add_domain(".obscure-site.net", Target::Reject);
+        let mut writer = crate::binary::BinaryRuleWriter::new();
+        let data = writer.write(&rules).unwrap();
         checker.init_from_bytes(&data).unwrap();
 
-        // Suffix ".pornhub.com" should match:
+        // Suffix ".obscure-site.net" should match:
         // 1. The root domain itself
-        assert!(checker.is_porn("pornhub.com"), "should match root domain");
+        assert!(checker.is_porn("obscure-site.net"), "should match root domain");
         // 2. www subdomain
-        assert!(checker.is_porn("www.pornhub.com"), "should match www subdomain");
+        assert!(checker.is_porn("www.obscure-site.net"), "should match www subdomain");
         // 3. Any subdomain
-        assert!(checker.is_porn("video.pornhub.com"), "should match any subdomain");
+        assert!(checker.is_porn("video.obscure-site.net"), "should match any subdomain");
         // 4. Deep subdomains
-        assert!(checker.is_porn("a.b.c.pornhub.com"), "should match deep subdomains");
+        assert!(checker.is_porn("a.b.c.obscure-site.net"), "should match deep subdomains");
 
         // Should NOT match:
         // 1. Different domain
         assert!(!checker.is_porn("google.com"), "should not match unrelated domain");
         // 2. Similar but different domain
-        assert!(!checker.is_porn("notpornhub.com"), "should not match similar domain");
-        // 3. Domain containing the name
-        assert!(!checker.is_porn("fakepornhub.com.evil.com"), "should not match containing domain");
+        assert!(!checker.is_porn("notobscure-site.net"), "should not match similar domain");
+    }
+
+    /// Test that heuristic detection works alongside binary file.
+    #[test]
+    fn test_heuristic_and_binary_combined() {
+        let mut checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
+
+        // Create test rules with a non-heuristic domain
+        let mut rules = IntermediateRules::new();
+        rules.add_domain(".custom-adult.net", Target::Reject);
+        let mut writer = crate::binary::BinaryRuleWriter::new();
+        let data = writer.write(&rules).unwrap();
+        checker.init_from_bytes(&data).unwrap();
+
+        // Heuristic detection (no file needed)
+        assert!(checker.is_porn("pornhub.com"), "heuristic: porn keyword");
+        assert!(checker.is_porn("example.xxx"), "heuristic: .xxx TLD");
+        assert!(checker.is_porn("xvideos.com"), "heuristic: xvideo keyword");
+
+        // Binary file detection (file needed)
+        assert!(checker.is_porn("custom-adult.net"), "binary: custom domain");
+        assert!(checker.is_porn("www.custom-adult.net"), "binary: custom subdomain");
+
+        // Neither should match
+        assert!(!checker.is_porn("google.com"), "safe domain");
     }
 
     /// Test case insensitive matching.
@@ -560,8 +615,12 @@ mod tests {
         // Just TLD should not match
         assert!(!checker.is_porn("com"), "bare TLD should not match");
 
-        // Partial domain name should not match
-        assert!(!checker.is_porn("pornhub"), "partial domain should not match");
+        // Note: "pornhub" without TLD WILL match heuristic because it contains "porn"
+        // This is expected behavior - the heuristic is intentionally broad
+        assert!(checker.is_porn("pornhub"), "contains porn keyword - heuristic matches");
+
+        // But a safe partial domain should not match
+        assert!(!checker.is_porn("google"), "safe partial domain should not match");
     }
 
     /// Integration test using real generated porn_domains.k2r.gz file.
