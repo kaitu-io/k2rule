@@ -144,8 +144,84 @@ Pre-built binary rule files are available via jsDelivr CDN:
 |----------|-------------|-----|
 | `cn_blacklist.k2r.gz` | Blacklist mode: specific sites use proxy, fallback to direct | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz` |
 | `cn_whitelist.k2r.gz` | Whitelist mode: most traffic direct, GFW blocked sites use proxy | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_whitelist.k2r.gz` |
+| `porn_domains.k2r.gz` | Porn domain blocklist (700k+ domains) | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz` |
 
-Rules are updated daily from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules).
+Rules are updated daily from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains).
+
+## Porn Domain Detection
+
+k2rule includes a dedicated porn domain checker with two-stage detection:
+
+1. **Heuristic detection** (fast, built-in): Detects domains using keywords and adult TLDs
+2. **Binary file lookup**: Checks against 700k+ domains from [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains)
+
+### Heuristic Detection (No Download Required)
+
+The heuristic detector catches domains containing:
+
+**Keywords:**
+- `porn`, `xvideo`, `xnxx`, `hentai`, `redtube`, `youporn`
+- `spankbang`, `xhamster`, `brazzers`, `bangbros`, `porntrex`, `porntube`, `pornstar`
+- `xxx`, `sex`, `adult` (with false positive filtering for essex, middlesex, etc.)
+
+**Adult TLDs (ICANN-approved):**
+- `.xxx` (2011), `.adult` (2014), `.porn` (2014), `.sex` (2015)
+
+### Quick Heuristic Check (No File Needed)
+
+```rust
+use k2rule::porn_heuristic::is_porn_heuristic;
+
+// Fast check using only built-in heuristics
+assert!(is_porn_heuristic("pornhub.com"));      // keyword match
+assert!(is_porn_heuristic("example.xxx"));       // adult TLD
+assert!(is_porn_heuristic("site.adult"));        // adult TLD
+assert!(!is_porn_heuristic("google.com"));       // safe
+assert!(!is_porn_heuristic("essex.ac.uk"));      // false positive filtered
+```
+
+### Full Detection with Lazy Loading
+
+```rust
+use k2rule::PornDomainChecker;
+use std::path::Path;
+
+// Create checker with remote URL and cache directory
+let mut checker = PornDomainChecker::new(
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz",
+    Path::new("/tmp/k2rule-porn-cache"),
+);
+
+// Lazy loading: file is downloaded automatically on first non-heuristic query
+// Heuristic-matched domains return immediately without download
+if checker.is_porn("pornhub.com") {       // Heuristic match - instant
+    println!("Blocked by heuristic!");
+}
+
+if checker.is_porn("obscure-site.net") {  // Triggers download, then checks file
+    println!("Blocked by domain list!");
+}
+
+// Or initialize explicitly upfront
+checker.init()?;  // Downloads if not cached
+```
+
+### Generate Porn Domain List
+
+```bash
+# Generate porn_domains.k2r.gz from Bon-Appetit/porn-domains
+k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v
+```
+
+Output:
+```
+Successfully generated porn domain list: "output/porn_domains.k2r.gz"
+  Source: 2026-01-28T08:17:56Z (707915 total domains)
+  Heuristic detected: 211786 domains (built-in, no storage needed)
+  Stored in file: 496129 domains (29.9% reduction)
+```
+
+The generator automatically filters out domains that can be detected by heuristic, reducing file size by ~30%.
 
 Source rule files (Clash YAML format) via jsDelivr:
 - `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt`
@@ -154,7 +230,10 @@ Source rule files (Clash YAML format) via jsDelivr:
 
 ## Automatic Updates
 
-This repository uses GitHub Actions to automatically update rules daily at 7:00 AM Beijing time (23:00 UTC). The workflow downloads the latest rules from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and generates binary files.
+This repository uses GitHub Actions to automatically update rules daily at 7:00 AM Beijing time (23:00 UTC). The workflow:
+- Downloads the latest rules from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules)
+- Downloads porn domain list from [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains)
+- Generates binary files and publishes to the `release` branch
 
 ## License
 

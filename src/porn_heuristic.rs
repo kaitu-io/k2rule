@@ -55,17 +55,27 @@ static FALSE_POSITIVE_PATTERNS: Lazy<Regex> = Lazy::new(|| {
     .unwrap()
 });
 
+/// ICANN-approved adult content TLDs.
+/// These are dedicated top-level domains for adult content.
+const ADULT_TLDS: &[&str] = &[
+    "xxx",   // Approved 2011
+    "adult", // Approved 2014
+    "porn",  // Approved 2014
+    "sex",   // Approved 2015
+];
+
 /// Main pattern for detecting porn domains.
 /// Uses word boundaries and case-insensitive matching.
 static PORN_PATTERN: Lazy<Regex> = Lazy::new(|| {
     // Build pattern from keywords
     let strong_keywords = PORN_KEYWORDS.join("|");
     let careful_keywords = CAREFUL_KEYWORDS.join("|");
+    let adult_tlds = ADULT_TLDS.join("|");
 
     // Pattern explanation:
     // - Strong keywords: match anywhere in domain
     // - Careful keywords: match but will be filtered by false positive check
-    // - .xxx TLD: ICANN's adult content TLD
+    // - Adult TLDs: ICANN-approved adult content TLDs (.xxx, .adult, .porn, .sex)
     let pattern = format!(
         r"(?ix)
         # Strong porn keywords (high confidence)
@@ -74,11 +84,12 @@ static PORN_PATTERN: Lazy<Regex> = Lazy::new(|| {
         # Careful keywords (need false positive filtering)
         ({careful})
         |
-        # .xxx TLD (ICANN adult content TLD)
-        \.xxx$
+        # ICANN adult content TLDs
+        \.({tlds})$
     ",
         strong = strong_keywords,
-        careful = careful_keywords
+        careful = careful_keywords,
+        tlds = adult_tlds
     );
 
     Regex::new(&pattern).unwrap()
@@ -147,12 +158,24 @@ mod tests {
         assert!(is_porn_heuristic("freexxx.net"));
     }
 
-    /// Test that .xxx TLD is detected (ICANN adult TLD)
+    /// Test that ICANN adult TLDs are detected (.xxx, .adult, .porn, .sex)
     #[test]
-    fn test_detects_xxx_tld() {
+    fn test_detects_adult_tlds() {
+        // .xxx TLD (approved 2011)
         assert!(is_porn_heuristic("example.xxx"));
         assert!(is_porn_heuristic("www.anything.xxx"));
-        assert!(is_porn_heuristic("site.xxx"));
+
+        // .adult TLD (approved 2014)
+        assert!(is_porn_heuristic("example.adult"));
+        assert!(is_porn_heuristic("www.site.adult"));
+
+        // .porn TLD (approved 2014)
+        assert!(is_porn_heuristic("example.porn"));
+        assert!(is_porn_heuristic("www.site.porn"));
+
+        // .sex TLD (approved 2015)
+        assert!(is_porn_heuristic("example.sex"));
+        assert!(is_porn_heuristic("www.site.sex"));
     }
 
     /// Test that domains containing "sex" are detected

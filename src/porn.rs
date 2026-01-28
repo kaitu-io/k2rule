@@ -41,11 +41,22 @@ use crate::Result;
 /// Porn domain checker.
 ///
 /// Uses the k2rule binary format to efficiently check if domains are known porn sites.
-/// The checker downloads and caches a list of porn domains, supporting:
-/// - Automatic gzip decompression
-/// - ETag-based conditional requests
-/// - Atomic cache updates
-/// - Hot reload without restart
+/// The checker supports:
+/// - **Lazy loading**: Automatically downloads on first non-heuristic query
+/// - **Two-stage detection**: Fast heuristic check, then file lookup
+/// - **Automatic gzip decompression**
+/// - **ETag-based conditional requests**
+/// - **Atomic cache updates**
+/// - **Hot reload without restart**
+///
+/// # Lazy Load Behavior
+///
+/// When `is_porn()` is called:
+/// 1. First checks using built-in heuristic (keywords, adult TLDs)
+/// 2. If heuristic doesn't match and file not loaded, triggers download
+/// 3. Then checks the downloaded domain list
+///
+/// This means the first query for a non-heuristic domain may be slower.
 pub struct PornDomainChecker {
     /// Remote URL of the porn domain list (typically .k2r.gz)
     url: String,
@@ -57,6 +68,8 @@ pub struct PornDomainChecker {
     etag: Option<String>,
     /// Source version from meta.json (e.g., "2026-01-28T08:17:56Z")
     source_version: Option<String>,
+    /// Whether lazy load has been attempted
+    lazy_load_attempted: bool,
 }
 
 impl PornDomainChecker {
@@ -73,6 +86,7 @@ impl PornDomainChecker {
             reader: None,
             etag: None,
             source_version: None,
+            lazy_load_attempted: false,
         }
     }
 
@@ -314,29 +328,68 @@ impl PornDomainChecker {
 
     /// Check if a domain is a known porn site.
     ///
-    /// This method uses a two-stage detection:
+    /// This method uses a two-stage detection with lazy loading:
     /// 1. **Heuristic check** (fast, built-in): Checks for known patterns like
-    ///    keywords (porn, xxx, sex), .xxx TLD, etc.
-    /// 2. **Binary file lookup** (if heuristic didn't match): Checks the
-    ///    downloaded domain list.
+    ///    keywords (porn, xxx, sex), adult TLDs (.xxx, .adult, .porn, .sex), etc.
+    /// 2. **Lazy load** (if needed): Downloads the domain list on first non-heuristic query
+    /// 3. **Binary file lookup**: Checks the downloaded domain list
     ///
     /// Returns `true` if the domain matches either detection method.
     /// Returns `false` if no match found.
     ///
+    /// # Lazy Loading
+    ///
+    /// The first query for a domain not caught by heuristic will trigger
+    /// a download (if URL is configured and file not cached). This may
+    /// cause a brief delay on the first such query.
+    ///
     /// # Example
     ///
     /// ```ignore
-    /// if checker.is_porn("example-adult-site.com") {
+    /// let mut checker = PornDomainChecker::new(
+    ///     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz",
+    ///     Path::new("/tmp/k2rule-cache"),
+    /// );
+    ///
+    /// // First call may trigger download if domain isn't caught by heuristic
+    /// if checker.is_porn("some-unknown-site.com") {
     ///     println!("Blocked!");
     /// }
     /// ```
-    pub fn is_porn(&self, domain: &str) -> bool {
+    pub fn is_porn(&mut self, domain: &str) -> bool {
         // First, try fast heuristic detection (no file lookup needed)
         if is_porn_heuristic(domain) {
             return true;
         }
 
+        // Lazy load: if not initialized and not yet attempted, try to load
+        if self.reader.is_none() && !self.lazy_load_attempted {
+            self.lazy_load_attempted = true;
+            if !self.url.is_empty() {
+                if let Err(e) = self.init() {
+                    log::warn!("Failed to lazy load porn domain list: {}", e);
+                }
+            }
+        }
+
         // Fall back to binary file lookup
+        match &self.reader {
+            Some(reader) => reader.match_domain(domain).is_some(),
+            None => false,
+        }
+    }
+
+    /// Check if a domain is porn (immutable version, no lazy loading).
+    ///
+    /// Use this when you need an immutable reference and have already
+    /// called `init()` or don't need lazy loading.
+    pub fn is_porn_no_lazy(&self, domain: &str) -> bool {
+        // First, try fast heuristic detection (no file lookup needed)
+        if is_porn_heuristic(domain) {
+            return true;
+        }
+
+        // Fall back to binary file lookup (no lazy load)
         match &self.reader {
             Some(reader) => reader.match_domain(domain).is_some(),
             None => false,
@@ -460,7 +513,8 @@ mod tests {
 
     #[test]
     fn test_not_initialized_heuristic_still_works() {
-        let checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
+        // Use empty URL to prevent lazy load attempts
+        let mut checker = PornDomainChecker::new("", Path::new("/tmp"));
 
         assert!(!checker.is_initialized());
         // Heuristic detection works even without initialization
