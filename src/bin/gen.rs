@@ -291,20 +291,18 @@ fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::err
     }
 
     // Step 4: Build IntermediateRules
+    // Only use suffix match - it matches both the domain itself and all subdomains
+    // e.g., ".pornhub.com" matches "pornhub.com", "www.pornhub.com", etc.
     let mut rules = IntermediateRules::new();
 
     for domain in &domains {
-        // Add as suffix match to catch subdomains too
-        // The format in porn-domains is just domain names
+        // Suffix match with leading dot matches the domain and all subdomains
         rules.add_domain(&format!(".{}", domain), Target::Reject);
-        // Also add exact match
-        rules.add_domain(domain, Target::Reject);
     }
 
     if verbose {
         println!(
-            "Created rules: {} exact + {} suffix domains",
-            rules.exact_domains.len(),
+            "Created rules: {} suffix domains",
             rules.suffix_domains.len()
         );
     }
