@@ -374,12 +374,14 @@ mod tests {
     use flate2::Compression;
     use std::io::Write;
 
+    /// Creates test rules using ONLY suffix matches (matching production behavior).
+    /// Suffix match ".domain.com" matches both "domain.com" and "sub.domain.com".
     fn create_test_porn_rules() -> Vec<u8> {
         let mut rules = IntermediateRules::new();
-        // Use Reject target for porn domains (but we only check for presence)
-        rules.add_domain("pornhub.com", Target::Reject);
+        // Only use suffix match - this is how production generate-porn works
+        rules.add_domain(".pornhub.com", Target::Reject);
         rules.add_domain(".xvideos.com", Target::Reject);
-        rules.add_domain("adult-site.com", Target::Reject);
+        rules.add_domain(".adult-site.com", Target::Reject);
 
         let mut writer = BinaryRuleWriter::new();
         writer.write(&rules).unwrap()
@@ -486,5 +488,144 @@ mod tests {
         assert!(checker.is_initialized());
         assert!(checker.is_porn("pornhub.com"));
         assert!(!checker.is_porn("google.com"));
+    }
+
+    /// Test that suffix match works for both root domain and subdomains.
+    /// This is critical because production uses only suffix match (.domain.com).
+    #[test]
+    fn test_suffix_match_covers_root_and_subdomains() {
+        let mut checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
+        let data = create_test_porn_rules();
+        checker.init_from_bytes(&data).unwrap();
+
+        // Suffix ".pornhub.com" should match:
+        // 1. The root domain itself
+        assert!(checker.is_porn("pornhub.com"), "should match root domain");
+        // 2. www subdomain
+        assert!(checker.is_porn("www.pornhub.com"), "should match www subdomain");
+        // 3. Any subdomain
+        assert!(checker.is_porn("video.pornhub.com"), "should match any subdomain");
+        // 4. Deep subdomains
+        assert!(checker.is_porn("a.b.c.pornhub.com"), "should match deep subdomains");
+
+        // Should NOT match:
+        // 1. Different domain
+        assert!(!checker.is_porn("google.com"), "should not match unrelated domain");
+        // 2. Similar but different domain
+        assert!(!checker.is_porn("notpornhub.com"), "should not match similar domain");
+        // 3. Domain containing the name
+        assert!(!checker.is_porn("fakepornhub.com.evil.com"), "should not match containing domain");
+    }
+
+    /// Test case insensitive matching.
+    #[test]
+    fn test_case_insensitive_matching() {
+        let mut checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
+        let data = create_test_porn_rules();
+        checker.init_from_bytes(&data).unwrap();
+
+        assert!(checker.is_porn("PORNHUB.COM"), "should match uppercase");
+        assert!(checker.is_porn("PornHub.Com"), "should match mixed case");
+        assert!(checker.is_porn("WWW.XVIDEOS.COM"), "should match uppercase subdomain");
+    }
+
+    /// Test multiple domains in the list.
+    #[test]
+    fn test_multiple_domains() {
+        let mut checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
+        let data = create_test_porn_rules();
+        checker.init_from_bytes(&data).unwrap();
+
+        // All three domains from create_test_porn_rules should match
+        assert!(checker.is_porn("pornhub.com"));
+        assert!(checker.is_porn("xvideos.com"));
+        assert!(checker.is_porn("adult-site.com"));
+
+        // Their subdomains should also match
+        assert!(checker.is_porn("www.pornhub.com"));
+        assert!(checker.is_porn("www.xvideos.com"));
+        assert!(checker.is_porn("www.adult-site.com"));
+    }
+
+    /// Test edge cases for domain matching.
+    #[test]
+    fn test_edge_cases() {
+        let mut checker = PornDomainChecker::new("http://test", Path::new("/tmp"));
+        let data = create_test_porn_rules();
+        checker.init_from_bytes(&data).unwrap();
+
+        // Empty string should not match
+        assert!(!checker.is_porn(""), "empty string should not match");
+
+        // Just TLD should not match
+        assert!(!checker.is_porn("com"), "bare TLD should not match");
+
+        // Partial domain name should not match
+        assert!(!checker.is_porn("pornhub"), "partial domain should not match");
+    }
+
+    /// Integration test using real generated porn_domains.k2r.gz file.
+    /// This test is ignored by default - run with `cargo test -- --ignored`
+    #[test]
+    #[ignore]
+    fn test_real_generated_file() {
+        use flate2::read::GzDecoder;
+        use std::io::Read as _;
+
+        let gz_path = std::path::Path::new("output/porn_domains.k2r.gz");
+        if !gz_path.exists() {
+            eprintln!("Skipping test: output/porn_domains.k2r.gz not found. Run `cargo run --release --bin k2rule-gen -- generate-porn` first.");
+            return;
+        }
+
+        // Read and decompress
+        let gz_data = fs::read(gz_path).unwrap();
+        let mut decoder = GzDecoder::new(&gz_data[..]);
+        let mut data = Vec::new();
+        decoder.read_to_end(&mut data).unwrap();
+
+        // Initialize checker
+        let mut checker = PornDomainChecker::new("", Path::new("/tmp"));
+        checker.init_from_bytes(&data).unwrap();
+
+        assert!(checker.is_initialized());
+
+        // Test known porn domains (these are in the Bon-Appetit/porn-domains blocklist)
+        let known_porn_domains = [
+            "pornhub.com",
+            "www.pornhub.com",
+            "xvideos.com",
+            "www.xvideos.com",
+            "xnxx.com",
+            "redtube.com",
+            "youporn.com",
+        ];
+
+        for domain in &known_porn_domains {
+            assert!(
+                checker.is_porn(domain),
+                "Expected {} to be detected as porn",
+                domain
+            );
+        }
+
+        // Test known safe domains
+        let safe_domains = [
+            "google.com",
+            "github.com",
+            "youtube.com",
+            "stackoverflow.com",
+            "rust-lang.org",
+        ];
+
+        for domain in &safe_domains {
+            assert!(
+                !checker.is_porn(domain),
+                "Expected {} to NOT be detected as porn",
+                domain
+            );
+        }
+
+        println!("Real file integration test passed!");
     }
 }
