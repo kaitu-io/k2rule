@@ -61,6 +61,30 @@
 //! - Atomic cache updates
 //! - Hot reload without restarting
 //!
+//! # Porn Domain Detection
+//!
+//! For applications that need to detect adult content domains,
+//! use [`PornDomainChecker`]:
+//!
+//! ```ignore
+//! use k2rule::PornDomainChecker;
+//! use std::path::Path;
+//!
+//! // Create checker with remote URL and local cache directory
+//! let mut checker = PornDomainChecker::new(
+//!     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz",
+//!     Path::new("/tmp/k2rule-porn-cache"),
+//! );
+//!
+//! // Initialize: loads from cache or downloads
+//! checker.init()?;
+//!
+//! // Check if a domain is porn
+//! if checker.is_porn("example-adult-site.com") {
+//!     println!("Blocked!");
+//! }
+//! ```
+//!
 //! # Rule Types
 //!
 //! - **DOMAIN**: Domain name matching (exact or suffix)
@@ -83,6 +107,7 @@ mod target;
 
 pub mod binary;
 pub mod converter;
+pub mod porn;
 pub mod remote;
 pub mod rule;
 pub mod ruleset;
@@ -107,6 +132,9 @@ pub use rule::geoip::{init_geoip_database, init_geoip_database_from_bytes, looku
 
 // Re-export remote rule management
 pub use remote::RemoteRuleManager;
+
+// Re-export porn domain checker
+pub use porn::PornDomainChecker;
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};

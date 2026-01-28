@@ -3,8 +3,10 @@
 use clap::{Parser, Subcommand};
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use k2rule::binary::BinaryRuleWriter;
+use k2rule::binary::{BinaryRuleWriter, IntermediateRules};
 use k2rule::converter::{ClashConfig, ClashConverter};
+use k2rule::Target;
+use serde::Deserialize;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -47,6 +49,16 @@ enum Commands {
         verbose: bool,
     },
 
+    /// Generate porn domain list from Bon-Appetit/porn-domains repo
+    GeneratePorn {
+        /// Output file (supports .k2r or .k2r.gz)
+        #[arg(short, long, default_value = "output/porn_domains.k2r.gz")]
+        output: PathBuf,
+
+        /// Verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 fn main() {
@@ -70,6 +82,12 @@ fn main() {
             verbose,
         } => {
             if let Err(e) = generate_all(&output_dir, verbose) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::GeneratePorn { output, verbose } => {
+            if let Err(e) = generate_porn(&output, verbose) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -192,6 +210,147 @@ fn generate_all(output_dir: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::
     }
 
     println!("All rule files generated in {:?}", output_dir);
+    Ok(())
+}
+
+/// Meta JSON structure from porn-domains repo
+#[derive(Debug, Deserialize)]
+struct PornDomainsMeta {
+    blocklist: PornDomainsFile,
+    #[allow(dead_code)]
+    allowlist: PornDomainsFile,
+}
+
+#[derive(Debug, Deserialize)]
+struct PornDomainsFile {
+    name: String,
+    updated: String,
+    lines: u64,
+    #[allow(dead_code)]
+    size: u64,
+}
+
+const PORN_DOMAINS_META_URL: &str =
+    "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/main/meta.json";
+const PORN_DOMAINS_BASE_URL: &str =
+    "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/main/";
+
+fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    // Ensure output directory exists
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Create HTTP client
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 minutes timeout for large file
+        .build()?;
+
+    // Step 1: Fetch meta.json to get the blocklist filename
+    if verbose {
+        println!("Fetching meta.json from porn-domains repo...");
+    }
+
+    let meta_response = client.get(PORN_DOMAINS_META_URL).send()?;
+    if !meta_response.status().is_success() {
+        return Err(format!("Failed to fetch meta.json: {}", meta_response.status()).into());
+    }
+
+    let meta: PornDomainsMeta = meta_response.json()?;
+
+    if verbose {
+        println!("  Blocklist file: {}", meta.blocklist.name);
+        println!("  Updated: {}", meta.blocklist.updated);
+        println!("  Lines: {}", meta.blocklist.lines);
+    }
+
+    // Step 2: Fetch the blocklist file
+    let blocklist_url = format!("{}{}", PORN_DOMAINS_BASE_URL, meta.blocklist.name);
+    if verbose {
+        println!("Downloading blocklist from: {}", blocklist_url);
+    }
+
+    let blocklist_response = client.get(&blocklist_url).send()?;
+    if !blocklist_response.status().is_success() {
+        return Err(format!("Failed to fetch blocklist: {}", blocklist_response.status()).into());
+    }
+
+    let blocklist_content = blocklist_response.text()?;
+
+    // Step 3: Parse domains
+    let domains: Vec<&str> = blocklist_content
+        .lines()
+        .filter(|line| {
+            let line = line.trim();
+            !line.is_empty() && !line.starts_with('#')
+        })
+        .collect();
+
+    if verbose {
+        println!("Parsed {} domains", domains.len());
+    }
+
+    // Step 4: Build IntermediateRules
+    let mut rules = IntermediateRules::new();
+
+    for domain in &domains {
+        // Add as suffix match to catch subdomains too
+        // The format in porn-domains is just domain names
+        rules.add_domain(&format!(".{}", domain), Target::Reject);
+        // Also add exact match
+        rules.add_domain(domain, Target::Reject);
+    }
+
+    if verbose {
+        println!(
+            "Created rules: {} exact + {} suffix domains",
+            rules.exact_domains.len(),
+            rules.suffix_domains.len()
+        );
+    }
+
+    // Step 5: Write binary file
+    let mut writer = BinaryRuleWriter::new();
+    let binary_data = writer.write(&rules)?;
+
+    // Check if output should be gzip compressed
+    let is_gzip = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e == "gz")
+        .unwrap_or(false);
+
+    if is_gzip {
+        if verbose {
+            println!(
+                "Writing gzip compressed output: {:?} ({} bytes uncompressed)",
+                output,
+                binary_data.len()
+            );
+        }
+        let file = fs::File::create(output)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        encoder.write_all(&binary_data)?;
+        encoder.finish()?;
+    } else {
+        if verbose {
+            println!("Writing output: {:?} ({} bytes)", output, binary_data.len());
+        }
+        let mut file = fs::File::create(output)?;
+        file.write_all(&binary_data)?;
+    }
+
+    // Write version file (source timestamp)
+    let version_path = output.with_extension("version");
+    fs::write(&version_path, &meta.blocklist.updated)?;
+
+    println!(
+        "Successfully generated porn domain list: {:?} ({} domains, source: {})",
+        output,
+        domains.len(),
+        meta.blocklist.updated
+    );
+
     Ok(())
 }
 
