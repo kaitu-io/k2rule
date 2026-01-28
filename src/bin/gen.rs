@@ -7,6 +7,7 @@ use k2rule::binary::{BinaryRuleWriter, IntermediateRules};
 use k2rule::build_porn_fst;
 use k2rule::converter::{ClashConfig, ClashConverter};
 use k2rule::porn_heuristic::is_porn_heuristic;
+use k2rule::slice::SliceConverter;
 use k2rule::Target;
 use serde::Deserialize;
 use std::fs;
@@ -72,6 +73,35 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
+
+    /// Convert Clash YAML config to slice-based format (k2r v2)
+    ///
+    /// The slice-based format preserves rule ordering (first match wins)
+    /// and uses FST for efficient domain matching.
+    GenerateSlice {
+        /// Input Clash YAML file
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Output binary file (supports .k2r or .k2r.gz)
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Generate all rule sets using slice-based format (k2r v2)
+    GenerateSliceAll {
+        /// Output directory for binary files
+        #[arg(short, long, default_value = "output")]
+        output_dir: PathBuf,
+
+        /// Verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 fn main() {
@@ -107,6 +137,25 @@ fn main() {
         }
         Commands::GeneratePornFst { output, verbose } => {
             if let Err(e) = generate_porn_fst(&output, verbose) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::GenerateSlice {
+            input,
+            output,
+            verbose,
+        } => {
+            if let Err(e) = generate_slice(&input, &output, verbose) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::GenerateSliceAll {
+            output_dir,
+            verbose,
+        } => {
+            if let Err(e) = generate_slice_all(&output_dir, verbose) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -562,4 +611,122 @@ fn parse_provider_payload(content: &str) -> Vec<String> {
             .map(|l| l.trim().to_string())
             .collect()
     }
+}
+
+fn generate_slice(
+    input: &PathBuf,
+    output: &PathBuf,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if verbose {
+        println!("Reading input file: {:?}", input);
+    }
+
+    let yaml_content = fs::read_to_string(input)?;
+
+    // Parse config first to get rule-providers
+    let config: ClashConfig = serde_yaml::from_str(&yaml_content)?;
+
+    // Create HTTP client for downloading rule providers
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let mut converter = SliceConverter::new();
+
+    // Download and load each rule provider
+    for (name, provider) in &config.rule_providers {
+        if let Some(url) = &provider.url {
+            if verbose {
+                println!("  Downloading provider '{}': {}", name, url);
+            }
+
+            match client.get(url).send() {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        let content = response.text()?;
+                        let lines = parse_provider_payload(&content);
+
+                        if verbose {
+                            println!("    Loaded {} rules", lines.len());
+                        }
+
+                        converter.set_provider_rules(name, lines);
+                    } else {
+                        eprintln!("  Warning: Failed to download {}: {}", name, response.status());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("  Warning: Failed to download {}: {}", name, e);
+                }
+            }
+        }
+    }
+
+    let binary_data = converter.convert(&yaml_content)?;
+
+    if verbose {
+        println!(
+            "Generated slice-based binary: {} bytes uncompressed",
+            binary_data.len()
+        );
+    }
+
+    // Check if output should be gzip compressed
+    let is_gzip = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e == "gz")
+        .unwrap_or(false);
+
+    if is_gzip {
+        if verbose {
+            println!("Writing gzip compressed output file: {:?}", output);
+        }
+        let file = fs::File::create(output)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        encoder.write_all(&binary_data)?;
+        encoder.finish()?;
+    } else {
+        if verbose {
+            println!("Writing output file: {:?} ({} bytes)", output, binary_data.len());
+        }
+        let mut file = fs::File::create(output)?;
+        file.write_all(&binary_data)?;
+    }
+
+    println!(
+        "Successfully converted {:?} -> {:?} (slice-based format)",
+        input, output
+    );
+    Ok(())
+}
+
+fn generate_slice_all(
+    output_dir: &PathBuf,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    fs::create_dir_all(output_dir)?;
+
+    let clash_rules_dir = PathBuf::from("clash_rules");
+    if !clash_rules_dir.exists() {
+        return Err("clash_rules directory not found".into());
+    }
+
+    // Generate cn_blacklist using slice format
+    let blacklist_path = clash_rules_dir.join("cn_blacklist.yml");
+    if blacklist_path.exists() {
+        let output_path = output_dir.join("cn_blacklist_v2.k2r.gz");
+        generate_slice(&blacklist_path, &output_path, verbose)?;
+    }
+
+    // Generate cn_whitelist using slice format
+    let whitelist_path = clash_rules_dir.join("cn_whitelist.yml");
+    if whitelist_path.exists() {
+        let output_path = output_dir.join("cn_whitelist_v2.k2r.gz");
+        generate_slice(&whitelist_path, &output_path, verbose)?;
+    }
+
+    println!("All slice-based rule files generated in {:?}", output_dir);
+    Ok(())
 }

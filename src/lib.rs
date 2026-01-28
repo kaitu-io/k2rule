@@ -113,6 +113,7 @@ pub mod porn_heuristic;
 pub mod remote;
 pub mod rule;
 pub mod ruleset;
+pub mod slice;
 
 // Re-export core types
 pub use error::{Error, Result};
@@ -143,3 +144,6 @@ pub use porn_fst::{build_porn_fst, FstPornChecker};
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};
+
+// Re-export slice-based format (k2r v2)
+pub use slice::{SliceConverter, SliceReader, SliceWriter};

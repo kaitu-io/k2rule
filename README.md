@@ -16,9 +16,35 @@ A high-performance rule-based routing/filtering system written in Rust, with bin
 - **GEOIP**: Geographic IP-based routing
 - **IP-MATCH**: Exact IP address matching
 
-## Binary Format
+## Binary Formats
 
-The binary format uses a `header + index + payload` structure:
+### Slice-Based Format (k2r v2) - Recommended
+
+The slice-based format preserves rule ordering (first match wins) and uses optimal data structures per slice:
+
+```
++------------------+
+|     HEADER       |  64 bytes (magic, version, fallback_target)
++------------------+
+|  SLICE ENTRIES   |  16 bytes × N (type, target, offset, size)
++------------------+
+|    SLICE 1       |  FST for domains, sorted array for CIDR/GeoIP
++------------------+
+|    SLICE 2       |  ...
++------------------+
+|      ...         |
++------------------+
+```
+
+**Key features:**
+- **Rule ordering preserved**: First matching slice wins (not longest match)
+- **FST for domains**: Efficient prefix-based domain matching
+- **Adjacent slice merging**: Same-type same-target rules are merged for efficiency
+- **Fallback in header**: No need to pass default target separately
+
+### Legacy Format (k2r v1)
+
+The original format uses a `header + index + payload` structure:
 
 ```
 +------------------+
@@ -44,22 +70,26 @@ cargo install --path .
 
 ## CLI Usage
 
-### Convert Clash YAML to Binary
+### Convert Clash YAML to Slice-Based Format (Recommended)
+
+```bash
+# Convert single file
+k2rule-gen generate-slice -i clash_rules/cn_blacklist.yml -o cn_blacklist_v2.k2r.gz -v
+
+# Generate all rule sets
+k2rule-gen generate-slice-all -o output/ -v
+```
+
+### Convert Clash YAML to Legacy Binary
 
 ```bash
 k2rule-gen convert -i clash_rules/cn_blacklist.yml -o cn_blacklist.k2r
 ```
 
-### Generate All Rule Sets
+### Generate All Rule Sets (Legacy)
 
 ```bash
 k2rule-gen generate-all -o output/
-```
-
-### Download and Generate from Remote
-
-```bash
-k2rule-gen download -o output/ -v
 ```
 
 ## Library Usage
@@ -71,7 +101,55 @@ Add to your `Cargo.toml`:
 k2rule = { git = "https://github.com/kaitu-io/k2rule" }
 ```
 
-Example:
+### Slice-Based Format (Recommended)
+
+```rust
+use k2rule::{SliceConverter, SliceReader, Target};
+
+// Convert Clash YAML to slice-based binary
+let yaml = r#"
+rules:
+  - DOMAIN-SUFFIX,cn.bing.com,DIRECT
+  - DOMAIN-SUFFIX,bing.com,PROXY
+  - GEOIP,CN,DIRECT
+  - MATCH,PROXY
+"#;
+
+let converter = SliceConverter::new();
+let data = converter.convert(yaml)?;
+
+// Read and query
+let reader = SliceReader::from_bytes(&data)?;
+
+// Ordering is preserved: cn.bing.com matches DIRECT (first rule)
+assert_eq!(reader.match_domain("cn.bing.com"), Some(Target::Direct));
+assert_eq!(reader.match_domain("www.bing.com"), Some(Target::Proxy));
+
+// Fallback is embedded in the binary
+assert_eq!(reader.fallback(), Target::Proxy);
+```
+
+### Building Rules Programmatically
+
+```rust
+use k2rule::{SliceWriter, SliceReader, Target};
+
+let mut writer = SliceWriter::new(Target::Proxy); // fallback
+
+// Add domain slice (uses FST internally)
+writer.add_domain_slice(&["google.com", "youtube.com"], Target::Proxy)?;
+
+// Add CIDR slice
+writer.add_cidr_v4_slice(&[(0x0A000000, 8)], Target::Direct)?; // 10.0.0.0/8
+
+// Add GeoIP slice
+writer.add_geoip_slice(&["CN", "HK"], Target::Direct)?;
+
+let data = writer.build()?;
+let reader = SliceReader::from_bytes(&data)?;
+```
+
+### Legacy Global API
 
 ```rust
 use k2rule::{match_rule, add_direct_domain, Target};
