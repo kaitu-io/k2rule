@@ -144,84 +144,67 @@ Pre-built binary rule files are available via jsDelivr CDN:
 |----------|-------------|-----|
 | `cn_blacklist.k2r.gz` | Blacklist mode: specific sites use proxy, fallback to direct | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz` |
 | `cn_whitelist.k2r.gz` | Whitelist mode: most traffic direct, GFW blocked sites use proxy | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_whitelist.k2r.gz` |
-| `porn_domains.k2r.gz` | Porn domain blocklist (700k+ domains) | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz` |
+| `porn_domains.fst.gz` | Porn domain blocklist using FST format (700k+ domains, ~5MB) | `https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.fst.gz` |
 
 Rules are updated daily from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains).
 
 ## Porn Domain Detection
 
-k2rule includes a dedicated porn domain checker with two-stage detection:
+k2rule provides a high-performance porn domain checker using FST (Finite State Transducer) for compact storage:
 
-1. **Heuristic detection** (fast, built-in): Detects domains using keywords and adult TLDs
-2. **Binary file lookup**: Checks against 700k+ domains from [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains)
+- **707k+ domains** from [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains)
+- **~5MB compressed** file size (FST exploits common prefixes/suffixes)
+- **Suffix matching**: `.pornhub.com` matches both `pornhub.com` and `www.pornhub.com`
+- **Case insensitive**: Handles mixed-case domains automatically
 
-### Heuristic Detection (No Download Required)
-
-The heuristic detector catches domains containing:
-
-**Keywords:**
-- `porn`, `xvideo`, `xnxx`, `hentai`, `redtube`, `youporn`
-- `spankbang`, `xhamster`, `brazzers`, `bangbros`, `porntrex`, `porntube`, `pornstar`
-- `xxx`, `sex`, `adult` (with false positive filtering for essex, middlesex, etc.)
-
-**Adult TLDs (ICANN-approved):**
-- `.xxx` (2011), `.adult` (2014), `.porn` (2014), `.sex` (2015)
-
-### Quick Heuristic Check (No File Needed)
+### Usage
 
 ```rust
-use k2rule::porn_heuristic::is_porn_heuristic;
+use k2rule::FstPornChecker;
 
-// Fast check using only built-in heuristics
-assert!(is_porn_heuristic("pornhub.com"));      // keyword match
-assert!(is_porn_heuristic("example.xxx"));       // adult TLD
-assert!(is_porn_heuristic("site.adult"));        // adult TLD
-assert!(!is_porn_heuristic("google.com"));       // safe
-assert!(!is_porn_heuristic("essex.ac.uk"));      // false positive filtered
-```
+// Load from file (supports .fst and .fst.gz)
+let checker = FstPornChecker::open("/path/to/porn_domains.fst.gz")?;
 
-### Full Detection with Lazy Loading
-
-```rust
-use k2rule::PornDomainChecker;
-use std::path::Path;
-
-// Create checker with remote URL and cache directory
-let mut checker = PornDomainChecker::new(
-    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz",
-    Path::new("/tmp/k2rule-porn-cache"),
-);
-
-// Lazy loading: file is downloaded automatically on first non-heuristic query
-// Heuristic-matched domains return immediately without download
-if checker.is_porn("pornhub.com") {       // Heuristic match - instant
-    println!("Blocked by heuristic!");
+// Check domains
+if checker.is_porn("pornhub.com") {
+    println!("Blocked!");
 }
 
-if checker.is_porn("obscure-site.net") {  // Triggers download, then checks file
-    println!("Blocked by domain list!");
-}
-
-// Or initialize explicitly upfront
-checker.init()?;  // Downloads if not cached
+// Subdomains are automatically matched
+assert!(checker.is_porn("www.pornhub.com"));
+assert!(checker.is_porn("video.pornhub.com"));
 ```
 
-### Generate Porn Domain List
+### Generate FST Porn Domain List
 
 ```bash
-# Generate porn_domains.k2r.gz from Bon-Appetit/porn-domains
-k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v
+# Generate porn_domains.fst.gz from Bon-Appetit/porn-domains
+k2rule-gen generate-porn-fst -o output/porn_domains.fst.gz -v
 ```
 
 Output:
 ```
-Successfully generated porn domain list: "output/porn_domains.k2r.gz"
-  Source: 2026-01-28T08:17:56Z (707915 total domains)
-  Heuristic detected: 211786 domains (built-in, no storage needed)
-  Stored in file: 496129 domains (29.9% reduction)
+Successfully generated FST porn domain list: "output/porn_domains.fst.gz"
+  Source: 2026-01-28T08:17:56Z (707915 domains)
+  FST size: 6839511 bytes uncompressed
+  Output size: 5135696 bytes (75.1% of uncompressed)
 ```
 
-The generator automatically filters out domains that can be detected by heuristic, reducing file size by ~30%.
+### FST File Format
+
+```text
++------------------+
+|  MAGIC (8 bytes) |  "PORNFST\x01"
++------------------+
+|  VERSION (4)     |  u32 LE
++------------------+
+| TIMESTAMP (8)    |  i64 LE (Unix timestamp)
++------------------+
+| DOMAIN_COUNT (4) |  u32 LE
++------------------+
+|    FST DATA      |  Variable (fst::Set bytes)
++------------------+
+```
 
 Source rule files (Clash YAML format) via jsDelivr:
 - `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt`

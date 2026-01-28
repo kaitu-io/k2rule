@@ -45,15 +45,17 @@ jobs:
           mkdir -p output
           ./target/release/k2rule-gen generate-all -o output/ -v
 
-      - name: Generate porn domain list
+      - name: Generate porn domain list (FST format)
         run: |
-          ./target/release/k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v
+          ./target/release/k2rule-gen generate-porn-fst -o output/porn_domains.fst.gz -v
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rule-binaries
-          path: output/*.k2r.gz
+          path: |
+            output/*.k2r.gz
+            output/*.fst.gz
           retention-days: 30
 
       - name: Create release tag
@@ -73,8 +75,10 @@ jobs:
             ## Files
             - `cn_blacklist.k2r.gz` - Blacklist mode (gzip compressed, specific sites use proxy, fallback to direct)
             - `cn_whitelist.k2r.gz` - Whitelist mode (gzip compressed, most traffic direct, GFW blocked sites use proxy)
-            - `porn_domains.k2r.gz` - Porn domain blocklist (gzip compressed, synced from Bon-Appetit/porn-domains)
-          files: output/*.k2r.gz
+            - `porn_domains.fst.gz` - Porn domain blocklist (FST format, ~5MB, synced from Bon-Appetit/porn-domains)
+          files: |
+            output/*.k2r.gz
+            output/*.fst.gz
           draft: false
           prerelease: false
         env:
@@ -93,9 +97,10 @@ jobs:
 
           # Copy generated files to root
           cp output/*.k2r.gz .
+          cp output/*.fst.gz .
 
           # Commit and force push
-          git add *.k2r.gz
+          git add *.k2r.gz *.fst.gz
           git commit -m "Update rules $(date +'%Y-%m-%d')"
           git push origin HEAD:release --force
 

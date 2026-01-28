@@ -73,6 +73,9 @@ ureq = { version = "2.9", features = ["gzip"] }
 # Regex for heuristic pattern matching
 regex = "1.10"
 
+# FST for compact domain storage
+fst = "0.4"
+
 # Benchmarking
 criterion = { version = "0.5", optional = true }
 

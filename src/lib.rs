@@ -108,6 +108,7 @@ mod target;
 pub mod binary;
 pub mod converter;
 pub mod porn;
+pub mod porn_fst;
 pub mod porn_heuristic;
 pub mod remote;
 pub mod rule;
@@ -136,6 +137,9 @@ pub use remote::RemoteRuleManager;
 
 // Re-export porn domain checker
 pub use porn::PornDomainChecker;
+
+// Re-export FST-based porn checker
+pub use porn_fst::{build_porn_fst, FstPornChecker};
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};

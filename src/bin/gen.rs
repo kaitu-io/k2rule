@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use k2rule::binary::{BinaryRuleWriter, IntermediateRules};
+use k2rule::build_porn_fst;
 use k2rule::converter::{ClashConfig, ClashConverter};
 use k2rule::porn_heuristic::is_porn_heuristic;
 use k2rule::Target;
@@ -50,10 +51,21 @@ enum Commands {
         verbose: bool,
     },
 
-    /// Generate porn domain list from Bon-Appetit/porn-domains repo
+    /// Generate porn domain list from Bon-Appetit/porn-domains repo (legacy k2r format)
     GeneratePorn {
         /// Output file (supports .k2r or .k2r.gz)
         #[arg(short, long, default_value = "output/porn_domains.k2r.gz")]
+        output: PathBuf,
+
+        /// Verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Generate porn domain list using FST format (recommended, much smaller)
+    GeneratePornFst {
+        /// Output file (supports .fst or .fst.gz)
+        #[arg(short, long, default_value = "output/porn_domains.fst.gz")]
         output: PathBuf,
 
         /// Verbose output
@@ -89,6 +101,12 @@ fn main() {
         }
         Commands::GeneratePorn { output, verbose } => {
             if let Err(e) = generate_porn(&output, verbose) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::GeneratePornFst { output, verbose } => {
+            if let Err(e) = generate_porn_fst(&output, verbose) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -382,6 +400,124 @@ fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::err
         filtered_domains.len(),
         (heuristic_detected as f64 / all_domains.len() as f64) * 100.0
     );
+
+    Ok(())
+}
+
+fn generate_porn_fst(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    // Ensure output directory exists
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Create HTTP client
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 minutes timeout for large file
+        .build()?;
+
+    // Step 1: Fetch meta.json to get the blocklist filename
+    if verbose {
+        println!("Fetching meta.json from porn-domains repo...");
+    }
+
+    let meta_response = client.get(PORN_DOMAINS_META_URL).send()?;
+    if !meta_response.status().is_success() {
+        return Err(format!("Failed to fetch meta.json: {}", meta_response.status()).into());
+    }
+
+    let meta: PornDomainsMeta = meta_response.json()?;
+
+    if verbose {
+        println!("  Blocklist file: {}", meta.blocklist.name);
+        println!("  Updated: {}", meta.blocklist.updated);
+        println!("  Lines: {}", meta.blocklist.lines);
+    }
+
+    // Step 2: Fetch the blocklist file
+    let blocklist_url = format!("{}{}", PORN_DOMAINS_BASE_URL, meta.blocklist.name);
+    if verbose {
+        println!("Downloading blocklist from: {}", blocklist_url);
+    }
+
+    let blocklist_response = client.get(&blocklist_url).send()?;
+    if !blocklist_response.status().is_success() {
+        return Err(format!("Failed to fetch blocklist: {}", blocklist_response.status()).into());
+    }
+
+    let blocklist_content = blocklist_response.text()?;
+
+    // Step 3: Parse domains
+    let all_domains: Vec<&str> = blocklist_content
+        .lines()
+        .filter(|line| {
+            let line = line.trim();
+            !line.is_empty() && !line.starts_with('#')
+        })
+        .collect();
+
+    if verbose {
+        println!("Parsed {} domains from source", all_domains.len());
+    }
+
+    // Step 4: For FST, we store ALL domains (no heuristic filtering needed)
+    // Add leading dot for suffix matching
+    let domains_with_dot: Vec<String> = all_domains
+        .iter()
+        .map(|d| format!(".{}", d))
+        .collect();
+    let domain_refs: Vec<&str> = domains_with_dot.iter().map(|s| s.as_str()).collect();
+
+    // Step 5: Build FST
+    if verbose {
+        println!("Building FST with {} domains...", domain_refs.len());
+    }
+
+    let fst_data = build_porn_fst(&domain_refs)?;
+
+    if verbose {
+        println!("FST built: {} bytes uncompressed", fst_data.len());
+    }
+
+    // Step 6: Write output file
+    let is_gzip = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e == "gz")
+        .unwrap_or(false);
+
+    let written_size;
+    if is_gzip {
+        if verbose {
+            println!("Writing gzip compressed output: {:?}", output);
+        }
+        let file = fs::File::create(output)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        encoder.write_all(&fst_data)?;
+        encoder.finish()?;
+        written_size = fs::metadata(output)?.len();
+    } else {
+        if verbose {
+            println!("Writing output: {:?}", output);
+        }
+        let mut file = fs::File::create(output)?;
+        file.write_all(&fst_data)?;
+        written_size = fst_data.len() as u64;
+    }
+
+    // Write version file (source timestamp)
+    let version_path = output.with_extension("version");
+    fs::write(&version_path, &meta.blocklist.updated)?;
+
+    println!("Successfully generated FST porn domain list: {:?}", output);
+    println!("  Source: {} ({} domains)", meta.blocklist.updated, all_domains.len());
+    println!("  FST size: {} bytes uncompressed", fst_data.len());
+    if is_gzip {
+        println!(
+            "  Output size: {} bytes ({:.1}% of uncompressed)",
+            written_size,
+            (written_size as f64 / fst_data.len() as f64) * 100.0
+        );
+    }
 
     Ok(())
 }
