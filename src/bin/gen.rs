@@ -508,15 +508,36 @@ fn generate_porn_fst(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std:
         println!("Parsed {} domains from source", all_domains.len());
     }
 
-    // Step 4: For FST, we store ALL domains (no heuristic filtering needed)
-    // Add leading dot for suffix matching
-    let domains_with_dot: Vec<String> = all_domains
+    // Step 4: Filter out domains that can be detected by heuristic
+    // This significantly reduces file size since heuristic detection is built-in
+    let filtered_domains: Vec<&str> = all_domains
+        .iter()
+        .filter(|domain| !is_porn_heuristic(domain))
+        .copied()
+        .collect();
+
+    let heuristic_detected = all_domains.len() - filtered_domains.len();
+
+    if verbose {
+        println!(
+            "Heuristic detected: {} domains ({:.1}% coverage)",
+            heuristic_detected,
+            (heuristic_detected as f64 / all_domains.len() as f64) * 100.0
+        );
+        println!(
+            "Remaining domains: {} (will be stored in FST)",
+            filtered_domains.len()
+        );
+    }
+
+    // Step 5: Add leading dot for suffix matching
+    let domains_with_dot: Vec<String> = filtered_domains
         .iter()
         .map(|d| format!(".{}", d))
         .collect();
     let domain_refs: Vec<&str> = domains_with_dot.iter().map(|s| s.as_str()).collect();
 
-    // Step 5: Build FST
+    // Step 6: Build FST
     if verbose {
         println!("Building FST with {} domains...", domain_refs.len());
     }
@@ -559,10 +580,16 @@ fn generate_porn_fst(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std:
 
     println!("Successfully generated FST porn domain list: {:?}", output);
     println!("  Source: {} ({} domains)", meta.blocklist.updated, all_domains.len());
+    println!(
+        "  Heuristic coverage: {} domains ({:.1}%)",
+        heuristic_detected,
+        (heuristic_detected as f64 / all_domains.len() as f64) * 100.0
+    );
+    println!("  Stored in FST: {} domains", filtered_domains.len());
     println!("  FST size: {} bytes uncompressed", fst_data.len());
     if is_gzip {
         println!(
-            "  Output size: {} bytes ({:.1}% of uncompressed)",
+            "  Compressed size: {} bytes ({:.1}% of uncompressed)",
             written_size,
             (written_size as f64 / fst_data.len() as f64) * 100.0
         );
