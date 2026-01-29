@@ -39,7 +39,7 @@ impl TextParser {
                 let content = &line[1..line.len() - 1];
                 let params = parse_params(content);
 
-                let rule_type = params.get("rule").and_then(|s| RuleType::from_str(s));
+                let rule_type = params.get("rule").and_then(|s| RuleType::parse(s));
                 let target = params
                     .get("target")
                     .map(|s| Target::from_str_lossy(s))

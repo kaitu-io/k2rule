@@ -163,7 +163,11 @@ fn main() {
     }
 }
 
-fn convert_file(input: &PathBuf, output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_file(
+    input: &PathBuf,
+    output: &PathBuf,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     if verbose {
         println!("Reading input file: {:?}", input);
     }
@@ -199,7 +203,11 @@ fn convert_file(input: &PathBuf, output: &PathBuf, verbose: bool) -> Result<(), 
 
                         converter.set_provider_rules(name, lines);
                     } else {
-                        eprintln!("  Warning: Failed to download {}: {}", name, response.status());
+                        eprintln!(
+                            "  Warning: Failed to download {}: {}",
+                            name,
+                            response.status()
+                        );
                     }
                 }
                 Err(e) => {
@@ -245,7 +253,11 @@ fn convert_file(input: &PathBuf, output: &PathBuf, verbose: bool) -> Result<(), 
         encoder.finish()?;
     } else {
         if verbose {
-            println!("Writing output file: {:?} ({} bytes)", output, binary_data.len());
+            println!(
+                "Writing output file: {:?} ({} bytes)",
+                output,
+                binary_data.len()
+            );
         }
         let mut file = fs::File::create(output)?;
         file.write_all(&binary_data)?;
@@ -298,10 +310,11 @@ struct PornDomainsFile {
     size: u64,
 }
 
+// Use jsDelivr CDN for faster and more reliable downloads
 const PORN_DOMAINS_META_URL: &str =
-    "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/main/meta.json";
+    "https://cdn.jsdelivr.net/gh/Bon-Appetit/porn-domains@main/meta.json";
 const PORN_DOMAINS_BASE_URL: &str =
-    "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/main/";
+    "https://cdn.jsdelivr.net/gh/Bon-Appetit/porn-domains@main/";
 
 fn generate_porn(output: &PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
     // Ensure output directory exists
@@ -614,10 +627,7 @@ fn parse_provider_payload(content: &str) -> Vec<String> {
                     return None;
                 }
                 // Remove "- " prefix and quotes
-                let rule = line
-                    .strip_prefix('-')
-                    .map(|s| s.trim())
-                    .unwrap_or(line);
+                let rule = line.strip_prefix('-').map(|s| s.trim()).unwrap_or(line);
                 let rule = rule
                     .trim_start_matches('\'')
                     .trim_end_matches('\'')

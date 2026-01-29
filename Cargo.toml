@@ -29,6 +29,7 @@ once_cell = "1.19"
 # YAML parsing for Clash config
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "1.0"
 
 # Checksum calculation
 sha2 = "0.10"
