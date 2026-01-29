@@ -181,6 +181,37 @@ assert_eq!(reader.match_domain("www.bing.com"), Some(Target::Proxy));
 
 Updated daily from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains).
 
+### 🎮 Use Cases
+
+K2Rule powers routing decisions in various scenarios:
+
+- **VPN Clients**: Smart routing for 翻墙 (GFW bypass) applications
+- **Proxy Tools**: Rule engine for Clash, Shadowsocks, Sing-box, V2Ray, Trojan clients
+- **Network Accelerators**: Traffic optimization for 加速器 applications
+- **Parental Control**: Content filtering with porn domain detection
+- **Enterprise Firewalls**: Domain and IP-based access control
+- **Mobile Apps**: Lightweight rule matching for iOS/Android VPN apps
+
+### 🙏 Acknowledgments
+
+K2Rule stands on the shoulders of giants. We thank these amazing open-source projects:
+
+**Proxy & VPN Ecosystem:**
+- [Clash](https://github.com/Dreamacro/clash) - A rule-based tunnel in Go, inspiration for our rule format
+- [Shadowsocks](https://github.com/shadowsocks) - The classic proxy protocol
+- [Sing-box](https://github.com/SagerNet/sing-box) - Universal proxy platform
+- [V2Ray](https://github.com/v2ray/v2ray-core) - Platform for building proxies
+- [Trojan](https://github.com/trojan-gfw/trojan) - An unidentifiable mechanism for GFW bypass
+
+**Rule Sources:**
+- [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) - High-quality GFW bypass rules
+- [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains) - Comprehensive porn domain list
+- [gfwlist](https://github.com/gfwlist/gfwlist) - The original GFW blocked sites list
+
+**Rust Ecosystem:**
+- [fst](https://github.com/BurntSushi/fst) - Finite state transducers for efficient string matching
+- [regex](https://github.com/rust-lang/regex) - Fast regular expressions
+
 ### 📖 Documentation
 
 - [Porn Heuristic Detection (EN)](docs/porn-heuristic-detection.md)
@@ -195,11 +226,11 @@ Free for non-commercial use. For commercial licensing, contact: [kaitu.io](https
 
 ### 🏢 About Kaitu.io
 
-K2Rule is developed by [Kaitu.io](https://kaitu.io) - a company focused on high-performance network infrastructure and content filtering solutions.
+K2Rule is developed by [Kaitu.io](https://kaitu.io) - a company focused on high-performance network infrastructure, proxy routing, and content filtering solutions.
 
 **Our Products:**
-- [Kaitu Desktop](https://kaitu.io) - Advanced network management for macOS/Windows/Linux
-- K2Rule - Open-source rule engine (this project)
+- [Kaitu Desktop](https://kaitu.io) - Advanced network management and proxy client for macOS/Windows/Linux, supporting Clash, Shadowsocks, Sing-box, V2Ray, and more
+- K2Rule - Open-source rule engine (this project), powering GFW bypass, VPN routing, and network acceleration
 
 **Contact:** [https://kaitu.io](https://kaitu.io)
 
@@ -209,7 +240,7 @@ K2Rule is developed by [Kaitu.io](https://kaitu.io) - a company focused on high-
 
 ## 中文
 
-一个用 Rust 编写的超高性能规则路由和过滤系统，专为网络流量管理和内容过滤优化。
+一个用 Rust 编写的超高性能规则路由和过滤系统，专为代理流量管理、VPN 路由和内容过滤优化。完美适配翻墙、科学上网、Clash/Shadowsocks/Sing-box 集成和网络加速器场景。
 
 ### ⚡ 性能亮点
 
@@ -225,7 +256,10 @@ K2Rule is developed by [Kaitu.io](https://kaitu.io) - a company focused on high-
 - **🚀 高性能**：二进制索引格式，优化的查找算法
 - **💾 内存高效**：内存映射文件，最小 RAM 占用
 - **🌍 跨平台**：macOS、Linux、Windows、iOS、Android（通过 FFI）
-- **🔄 Clash 兼容**：将 Clash YAML 规则转换为优化的二进制格式
+- **🔄 Clash 兼容**：将 Clash YAML 规则转换为优化的二进制格式，适用于 VPN 和代理应用
+- **🌐 翻墙支持**：专为 GFW 绕过场景设计，高效路由规则
+- **⚡ 网络加速**：为加速器和流量管理优化
+- **🔧 协议无关**：支持 Shadowsocks、Sing-box、V2Ray、Trojan 等代理协议
 - **🧠 智能启发式**：基于模式的检测，文件大小减少 47%
 - **🔒 零误判**：精心设计的规则，确保准确过滤
 
@@ -355,6 +389,37 @@ assert_eq!(reader.match_domain("www.bing.com"), Some(Target::Proxy));
 
 每日从 [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) 和 [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains) 更新。
 
+### 🎮 应用场景
+
+K2Rule 为各种场景提供路由决策支持：
+
+- **VPN 客户端**：翻墙应用的智能路由
+- **代理工具**：Clash、Shadowsocks、Sing-box、V2Ray、Trojan 客户端的规则引擎
+- **网络加速器**：加速器应用的流量优化
+- **家长控制**：色情域名检测的内容过滤
+- **企业防火墙**：基于域名和 IP 的访问控制
+- **移动应用**：iOS/Android VPN 应用的轻量级规则匹配
+
+### 🙏 致谢
+
+K2Rule 站在巨人的肩膀上。感谢这些优秀的开源项目：
+
+**代理 & VPN 生态：**
+- [Clash](https://github.com/Dreamacro/clash) - Go 语言的规则隧道，我们规则格式的灵感来源
+- [Shadowsocks](https://github.com/shadowsocks) - 经典的代理协议
+- [Sing-box](https://github.com/SagerNet/sing-box) - 通用代理平台
+- [V2Ray](https://github.com/v2ray/v2ray-core) - 构建代理的平台
+- [Trojan](https://github.com/trojan-gfw/trojan) - 不可识别的 GFW 绕过机制
+
+**规则来源：**
+- [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) - 高质量的 GFW 绕过规则
+- [Bon-Appetit/porn-domains](https://github.com/Bon-Appetit/porn-domains) - 全面的色情域名列表
+- [gfwlist](https://github.com/gfwlist/gfwlist) - 原始的 GFW 被屏蔽网站列表
+
+**Rust 生态：**
+- [fst](https://github.com/BurntSushi/fst) - 高效字符串匹配的有限状态转换器
+- [regex](https://github.com/rust-lang/regex) - 快速正则表达式
+
 ### 📖 文档
 
 - [Porn Heuristic Detection (EN)](docs/porn-heuristic-detection.md)
@@ -369,11 +434,11 @@ assert_eq!(reader.match_domain("www.bing.com"), Some(Target::Proxy));
 
 ### 🏢 关于 Kaitu.io
 
-K2Rule 由 [Kaitu.io](https://kaitu.io) 开发 - 专注于高性能网络基础设施和内容过滤解决方案的公司。
+K2Rule 由 [Kaitu.io](https://kaitu.io) 开发 - 专注于高性能网络基础设施、代理路由和内容过滤解决方案的公司。
 
 **我们的产品：**
-- [Kaitu Desktop](https://kaitu.io) - macOS/Windows/Linux 高级网络管理工具
-- K2Rule - 开源规则引擎（本项目）
+- [Kaitu Desktop](https://kaitu.io) - macOS/Windows/Linux 高级网络管理和代理客户端，支持 Clash、Shadowsocks、Sing-box 等协议
+- K2Rule - 开源规则引擎（本项目），为翻墙、科学上网、VPN 路由提供核心支持
 
 **联系我们：** [https://kaitu.io](https://kaitu.io)
 
