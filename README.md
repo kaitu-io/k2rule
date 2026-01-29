@@ -8,7 +8,7 @@
 
 ## English
 
-A blazing-fast rule-based routing and filtering system written in Rust, optimized for network traffic management and content filtering.
+A blazing-fast rule-based routing and filtering system written in Rust, optimized for proxy traffic management, VPN routing, and content filtering. Perfect for GFW bypass, Clash/Shadowsocks/Sing-box integration, and network acceleration solutions.
 
 ### ⚡ Performance Highlights
 
@@ -24,7 +24,10 @@ A blazing-fast rule-based routing and filtering system written in Rust, optimize
 - **🚀 High Performance**: Binary index format with optimized lookup algorithms
 - **💾 Memory Efficient**: Memory-mapped files for minimal RAM usage
 - **🌍 Cross-Platform**: macOS, Linux, Windows, iOS, Android via FFI
-- **🔄 Clash Compatible**: Convert Clash YAML rules to optimized binary format
+- **🔄 Clash Compatible**: Convert Clash YAML rules to optimized binary format - ideal for VPN and 代理 (proxy) applications
+- **🌐 GFW Bypass Support**: Designed for 翻墙 (firewall bypass) scenarios with efficient routing rules
+- **⚡ Network Acceleration**: Optimized for 加速器 (accelerator) and traffic management
+- **🔧 Protocol Agnostic**: Works with Shadowsocks, Sing-box, V2Ray, and other proxy protocols
 - **🧠 Smart Heuristics**: Pattern-based detection reduces file size by 47%
 - **🔒 Zero False Positives**: Carefully crafted rules for accurate filtering
 
