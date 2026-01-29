@@ -7,11 +7,12 @@
 //!
 //! 1. **False Positive Filter**: Excludes legitimate domains (essex.ac.uk, etc.)
 //! 2. **Strong Keywords**: Industry-specific terminology (porn, xxx, sex, etc.)
-//! 3. **Porn Terminology**: Explicit terms (pussy, fuck, milf, bdsm, etc.)
-//! 4. **Compound Terms**: Multi-word combinations (sexcam, freeporn, pornhub, etc.)
-//! 5. **Verb+Noun Patterns**: Sequential word combinations (free+porn, live+sex, etc.)
-//! 6. **Special Patterns**: Repetitions (xxx, sexsex) and numeric patterns (69)
-//! 7. **Adult TLDs**: ICANN-approved adult domains (.xxx, .adult, .porn, .sex)
+//! 3. **Special Regex Patterns**: Optimized patterns (^3x, 69 not in digits, ass with boundaries)
+//! 4. **Porn Terminology**: Explicit terms (pussy, fuck, milf, bdsm, etc.)
+//! 5. **Compound Terms**: Multi-word combinations (sexcam, freeporn, pornhub, etc.)
+//! 6. **Verb+Noun Patterns**: Sequential word combinations (free+porn, live+sex, etc.)
+//! 7. **Repetition Patterns**: Character/word repetitions (xxx, sexsex)
+//! 8. **Adult TLDs**: ICANN-approved adult domains (.xxx, .adult, .porn, .sex)
 //!
 //! ## Coverage Statistics
 //!
@@ -60,13 +61,14 @@ const PORN_KEYWORDS: &[&str] = &[
 
 /// Porn industry terminology - explicit terms with zero false positive risk.
 /// Based on analysis of 707k domains, all terms appear 500+ times.
+/// Note: Some terms like "ass" and "tube" are matched via regex patterns to avoid false positives.
 const PORN_TERMINOLOGY: &[&str] = &[
     // === Body parts (extremely explicit, zero false positives) ===
     "pussy",        // 1,027 occurrences
     "cock",         // 469 occurrences
     "dick",         // 335 occurrences
     "tits",         // 452 occurrences
-    // "ass" - REMOVED: causes false positives (class, pass, grassland)
+    // "ass" - Moved to regex pattern with word boundary check
     "boobs",        // 401 occurrences
 
     // === Explicit activities (zero false positives) ===
@@ -357,6 +359,106 @@ static PORN_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(&pattern).unwrap()
 });
 
+/// Regex pattern for domains starting with 3x.
+static PATTERN_3X: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^3x").unwrap()
+});
+
+/// Regex pattern for finding 69 (will be validated separately to exclude year context).
+static PATTERN_69: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"69").unwrap()
+});
+
+/// Regex pattern for finding 'ass' with word boundary after (will be validated to exclude common words).
+/// Uses 'ass\b' not '\bass\b' to match "hotass", "bigass" etc.
+static PATTERN_ASS: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)ass\b").unwrap()
+});
+
+/// Check if domain starts with "3x" pattern.
+fn has_3x_prefix(domain: &str) -> bool {
+    PATTERN_3X.is_match(domain)
+}
+
+/// Check if domain contains "69" not surrounded by digits.
+/// Matches: "hot69", "69videos", "my-69-site"
+/// Excludes: "1969", "2069", "3.6.9"
+fn has_69_pattern(domain: &str) -> bool {
+    for mat in PATTERN_69.find_iter(domain) {
+        let pos = mat.start();
+
+        // Check character before "69"
+        let has_digit_before = if pos > 0 {
+            domain.as_bytes()[pos - 1].is_ascii_digit()
+        } else {
+            false
+        };
+
+        // Check character after "69"
+        let end_pos = mat.end();
+        let has_digit_after = if end_pos < domain.len() {
+            domain.as_bytes()[end_pos].is_ascii_digit()
+        } else {
+            false
+        };
+
+        // Match if NOT surrounded by digits
+        if !has_digit_before && !has_digit_after {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Check if domain contains "ass" but not as part of common words.
+/// Matches: "bigass", "hotass", "ass.com", "my-ass"
+/// Excludes: "class", "glass", "pass", "grass", "mass", "bass", "brass"
+fn has_ass_pattern(domain: &str) -> bool {
+    // List of common words ending in 'ass' that are NOT porn
+    const COMMON_WORDS: &[&str] = &[
+        "class", "glass", "pass", "grass", "mass", "bass", "brass",
+        "compass", "harass", "trespass", "bypass", "morass", "carcass",
+    ];
+
+    for mat in PATTERN_ASS.find_iter(domain) {
+        let word_start = mat.start();
+
+        // Find the start of the word containing 'ass'
+        let mut start_pos = word_start;
+        while start_pos > 0 {
+            let ch = domain.as_bytes()[start_pos - 1];
+            if ch.is_ascii_alphanumeric() {
+                start_pos -= 1;
+            } else {
+                break;
+            }
+        }
+
+        // Find the end of the word containing 'ass'
+        let mut end_pos = mat.end();
+        while end_pos < domain.len() {
+            let ch = domain.as_bytes()[end_pos];
+            if ch.is_ascii_alphanumeric() {
+                end_pos += 1;
+            } else {
+                break;
+            }
+        }
+
+        let word = &domain[start_pos..end_pos];
+
+        // Check if this is a common non-porn word
+        let is_common_word = COMMON_WORDS.iter().any(|&w| word.eq_ignore_ascii_case(w));
+
+        if !is_common_word {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Check if domain contains verb+noun sequential pattern.
 ///
 /// Matches patterns like:
@@ -401,7 +503,6 @@ fn has_verb_noun_pattern(domain: &str) -> bool {
 /// Matches:
 /// - Character repetition: xxx, xxxxxx
 /// - Word repetition: sexsex, camcam, girlgirl
-/// - Numeric patterns: 69 (not part of years like 1969)
 fn has_repetition_pattern(domain: &str) -> bool {
     // Character repetitions
     if domain.contains("xxx") || domain.contains("xxxxxx") {
@@ -412,22 +513,6 @@ fn has_repetition_pattern(domain: &str) -> bool {
     const REPETITIONS: &[&str] = &["sexsex", "camcam", "girlgirl"];
     for pattern in REPETITIONS {
         if domain.contains(pattern) {
-            return true;
-        }
-    }
-
-    // Numeric pattern "69" - but not as part of years (e.g., 1969)
-    // Check if "69" exists and is not preceded by "19" or "20"
-    if let Some(pos) = domain.find("69") {
-        // Check if it's part of 1969 or 2069
-        let is_year = if pos >= 2 {
-            let before = &domain[pos-2..pos];
-            before == "19" || before == "20"
-        } else {
-            false
-        };
-
-        if !is_year {
             return true;
         }
     }
@@ -504,26 +589,37 @@ pub fn is_porn_heuristic(domain: &str) -> bool {
         return true;
     }
 
-    // Layer 3: Check porn terminology
+    // Layer 3: Check special optimized patterns
+    if has_3x_prefix(&domain_lower) {
+        return true;
+    }
+    if has_69_pattern(&domain_lower) {
+        return true;
+    }
+    if has_ass_pattern(&domain_lower) {
+        return true;
+    }
+
+    // Layer 4: Check porn terminology
     for term in PORN_TERMINOLOGY {
         if domain_lower.contains(term) {
             return true;
         }
     }
 
-    // Layer 4: Check compound terms
+    // Layer 5: Check compound terms
     for compound in PORN_COMPOUNDS {
         if domain_lower.contains(compound) {
             return true;
         }
     }
 
-    // Layer 5: Check verb+noun patterns
+    // Layer 6: Check verb+noun patterns
     if has_verb_noun_pattern(&domain_lower) {
         return true;
     }
 
-    // Layer 6: Check special patterns (repetitions, numeric)
+    // Layer 7: Check repetition patterns (xxx, word repetitions)
     if has_repetition_pattern(&domain_lower) {
         return true;
     }
@@ -809,12 +905,54 @@ mod tests {
         assert!(is_porn_heuristic("girlgirl.net"));
     }
 
-    /// Test numeric patterns
+    /// Test numeric patterns with regex optimization
     #[test]
     fn test_detects_numeric() {
+        // Should match: 69 not surrounded by digits
         assert!(is_porn_heuristic("69.com"));
         assert!(is_porn_heuristic("hot69.net"));
         assert!(is_porn_heuristic("69videos.tv"));
+        assert!(is_porn_heuristic("my-69-site.com"));
+
+        // Should NOT match: 69 within digits (years, versions)
+        assert!(!is_porn_heuristic("june-9-1969.org"));
+        assert!(!is_porn_heuristic("year1969.com"));
+        assert!(!is_porn_heuristic("2069future.net"));
+        assert!(!is_porn_heuristic("version-3.6.9.com"));
+    }
+
+    /// Test 3x prefix pattern
+    #[test]
+    fn test_detects_3x_prefix() {
+        // Should match: domains starting with 3x
+        assert!(is_porn_heuristic("3xmovies.com"));
+        assert!(is_porn_heuristic("3xvideos.net"));
+        assert!(is_porn_heuristic("3x.tv"));
+        assert!(is_porn_heuristic("3xporn.xxx"));
+
+        // Should NOT match: 3x not at start
+        assert!(!is_porn_heuristic("some3x.com"));
+        assert!(!is_porn_heuristic("test-3x.net"));
+    }
+
+    /// Test ass pattern with word boundaries
+    #[test]
+    fn test_detects_ass_with_boundaries() {
+        // Should match: ass in porn context
+        assert!(is_porn_heuristic("bigass.com"));
+        assert!(is_porn_heuristic("hotass.tv"));
+        assert!(is_porn_heuristic("niceass.net"));
+        assert!(is_porn_heuristic("ass.xxx"));
+        assert!(is_porn_heuristic("my-ass.com"));
+
+        // Should NOT match: ass at end of common words
+        assert!(!is_porn_heuristic("class.com"));
+        assert!(!is_porn_heuristic("glass.net"));
+        assert!(!is_porn_heuristic("pass.org"));
+        assert!(!is_porn_heuristic("grass.com"));
+        assert!(!is_porn_heuristic("mass.edu"));
+        assert!(!is_porn_heuristic("bass.com"));
+        assert!(!is_porn_heuristic("brass.net"));
     }
 
     // ==================== No False Positives on New Terms ====================
