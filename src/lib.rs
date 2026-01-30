@@ -61,6 +61,30 @@
 //! - Atomic cache updates
 //! - Hot reload without restarting
 //!
+//! # Porn Domain Detection
+//!
+//! For applications that need to detect adult content domains,
+//! use [`PornDomainChecker`]:
+//!
+//! ```ignore
+//! use k2rule::PornDomainChecker;
+//! use std::path::Path;
+//!
+//! // Create checker with remote URL and local cache directory
+//! let mut checker = PornDomainChecker::new(
+//!     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz",
+//!     Path::new("/tmp/k2rule-porn-cache"),
+//! );
+//!
+//! // Initialize: loads from cache or downloads
+//! checker.init()?;
+//!
+//! // Check if a domain is porn
+//! if checker.is_porn("example-adult-site.com") {
+//!     println!("Blocked!");
+//! }
+//! ```
+//!
 //! # Rule Types
 //!
 //! - **DOMAIN**: Domain name matching (exact or suffix)
@@ -85,9 +109,13 @@ mod target;
 
 pub mod binary;
 pub mod converter;
+pub mod porn;
+pub mod porn_fst;
+pub mod porn_heuristic;
 pub mod remote;
 pub mod rule;
 pub mod ruleset;
+pub mod slice;
 
 // Re-export core types
 pub use error::{Error, Result};
@@ -110,6 +138,12 @@ pub use rule::geoip::{init_geoip_database, init_geoip_database_from_bytes, looku
 // Re-export remote rule management
 pub use remote::RemoteRuleManager;
 
+// Re-export porn domain checker
+pub use porn::PornDomainChecker;
+
+// Re-export FST-based porn checker
+pub use porn_fst::{build_porn_fst, FstPornChecker};
+
 // Re-export metadata
 pub use metadata::UpdateMetadata;
 
@@ -118,3 +152,6 @@ pub use geoip_manager::{GeoIpManager, DEFAULT_GEOIP_UPDATE_INTERVAL, DEFAULT_GEO
 
 // Re-export binary reader types for advanced usage
 pub use binary::{CachedBinaryReader, CachedReaderConfig};
+
+// Re-export slice-based format (k2r v2)
+pub use slice::{SliceConverter, SliceReader, SliceWriter};
