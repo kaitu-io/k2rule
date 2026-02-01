@@ -51,7 +51,7 @@ env_logger = "0.11"
 clap = { version = "4.4", features = ["derive"] }
 
 # HTTP client for rule provider downloads
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 # Tempfile for mmap from bytes
 tempfile = "3.10"
