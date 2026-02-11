@@ -56,6 +56,8 @@ func (m *RemoteRuleManager) Init() error {
 	if _, err := os.Stat(cachedPath); err == nil {
 		// Cache exists, try to load it
 		if err := m.reader.Load(cachedPath); err == nil {
+			// Sync fallback from loaded file
+			m.fallback = Target(m.reader.Fallback())
 			// Successfully loaded from cache, start background update check
 			go m.startAutoUpdate()
 			return nil
@@ -141,6 +143,9 @@ func (m *RemoteRuleManager) downloadAndLoad(useETag bool) error {
 	if err := m.reader.Load(cachePath); err != nil {
 		return fmt.Errorf("failed to load new rules: %w", err)
 	}
+
+	// Sync fallback from loaded file
+	m.fallback = Target(m.reader.Fallback())
 
 	// Update metadata
 	m.mu.Lock()

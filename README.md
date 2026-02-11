@@ -25,19 +25,19 @@ go get github.com/kaitu-io/k2rule
 k2rule.InitRemote(
     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
     "",  // Use default cache directory ~/.cache/k2rule/
-    k2rule.TargetDirect,
 )
 
 // Start matching
 target := k2rule.Match("google.com")  // Returns PROXY
 ```
 
+**💡 Note:** The fallback target (DIRECT, PROXY, or REJECT) is automatically read from the .k2r file header, which comes from the Clash YAML's `MATCH` rule. You don't need to specify it manually.
+
 **📱 iOS Users:** Must specify cache directory to Library/Caches/ to prevent iCloud sync:
 ```go
 k2rule.InitRemote(
     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
     "/path/to/Library/Caches/k2rule",  // iOS sandbox cache directory
-    k2rule.TargetDirect,
 )
 ```
 
@@ -76,7 +76,6 @@ func main() {
     err := k2rule.InitRemote(
         "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
         "",  // Use default cache directory, iOS users specify Library/Caches path
-        k2rule.TargetDirect,
     )
     if err != nil {
         panic(err)
@@ -122,7 +121,6 @@ cacheDir := filepath.Join(
 err := k2rule.InitRemote(
     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
     cacheDir,  // Specify iOS cache directory
-    k2rule.TargetDirect,
 )
 ```
 
@@ -150,10 +148,10 @@ Each rule URL uses a separate cache file (based on URL's SHA256 hash):
 **Switching Rules:**
 ```go
 // Use blacklist first
-k2rule.InitRemote("...cn_blacklist.k2r.gz", "", k2rule.TargetDirect)
+k2rule.InitRemote("...cn_blacklist.k2r.gz", "")
 
 // Switch to whitelist later (no conflicts, uses different cache file)
-k2rule.InitRemote("...cn_whitelist.k2r.gz", "", k2rule.TargetProxy)
+k2rule.InitRemote("...cn_whitelist.k2r.gz", "")
 ```
 
 **Auto-Update Flow:**

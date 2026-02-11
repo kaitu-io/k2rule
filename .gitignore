@@ -28,4 +28,4 @@ go.sum
 *.dylib
 *.test
 *.out
-basic
+examples/basic/basic

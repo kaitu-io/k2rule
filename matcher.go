@@ -23,27 +23,29 @@ type Matcher struct {
 
 // InitRemote initializes from a remote URL with auto-download and updates
 // This is the recommended way to use k2rule - provides out-of-the-box functionality
+// The fallback target is automatically read from the .k2r file header.
 //
 // Parameters:
 //   - url: CDN URL of the rule file (e.g., https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz)
 //   - cacheDir: Cache directory path. Use "" for default (~/.cache/k2rule/).
-//                For iOS, use Library/Caches subdirectory to prevent iCloud sync.
-//   - fallback: Fallback target when no rules match
+//               For iOS, use Library/Caches subdirectory to prevent iCloud sync.
 //
 // Example (default cache):
-//   k2rule.InitRemote("https://...", "", k2rule.TargetDirect)
+//   k2rule.InitRemote("https://...", "")
 //
 // Example (iOS custom cache):
-//   k2rule.InitRemote("https://...", "/path/to/Library/Caches/k2rule", k2rule.TargetDirect)
-func InitRemote(url string, cacheDir string, fallback Target) error {
+//   k2rule.InitRemote("https://...", "/path/to/Library/Caches/k2rule")
+func InitRemote(url string, cacheDir string) error {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
 
-	manager := NewRemoteRuleManager(url, cacheDir, fallback)
+	// Create manager with default fallback (will be synced from file)
+	manager := NewRemoteRuleManager(url, cacheDir, TargetDirect)
 	if err := manager.Init(); err != nil {
 		return err
 	}
 
+	// Fallback is automatically synced from file in Init()
 	globalManager = manager
 	return nil
 }
@@ -61,18 +63,28 @@ func InitWithFallback(fallback Target) error {
 	return nil
 }
 
-// InitFromFile initializes from a local k2r file using mmap
-func InitFromFile(path string, fallback Target) error {
+// InitFromFile initializes from a local k2r file using memory-mapped I/O
+// The fallback target is automatically read from the .k2r file header.
+//
+// Parameters:
+//   - path: Path to the .k2r or .k2r.gz file
+//
+// Example:
+//   k2rule.InitFromFile("./rules/cn_blacklist.k2r.gz")
+func InitFromFile(path string) error {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
 
-	// Create a manager with mmap reader (no remote updates)
-	manager := NewRemoteRuleManager("", "", fallback)
+	// Create manager with default fallback (will be synced from file)
+	manager := NewRemoteRuleManager("", "", TargetDirect)
 
 	// Load the local file directly
 	if err := manager.reader.Load(path); err != nil {
 		return fmt.Errorf("failed to load k2r file: %w", err)
 	}
+
+	// Sync fallback from loaded file
+	manager.fallback = Target(manager.reader.Fallback())
 
 	globalManager = manager
 	return nil

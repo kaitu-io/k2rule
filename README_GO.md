@@ -52,10 +52,10 @@ import (
 
 func main() {
     // Initialize with remote URL (auto-download + auto-update)
+    // Fallback target is automatically read from the .k2r file header
     k2rule.InitRemote(
         "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
         "",  // Use default cache directory (~/.cache/k2rule/), iOS users specify Library/Caches path
-        k2rule.TargetDirect, // fallback when no rule matches
     )
 
     // Match domains (memory-mapped, zero-copy)
@@ -103,7 +103,6 @@ cacheDir := filepath.Join(
 err := k2rule.InitRemote(
     "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
     cacheDir,  // Specify iOS cache directory
-    k2rule.TargetDirect,
 )
 ```
 
@@ -123,7 +122,8 @@ Load from a local `.k2r.gz` file:
 
 ```go
 // Load local file with mmap (still uses ~200 KB memory)
-k2rule.InitFromFile("./rules/cn_blacklist.k2r.gz", k2rule.TargetDirect)
+// Fallback target is automatically read from the .k2r file header
+k2rule.InitFromFile("./rules/cn_blacklist.k2r.gz")
 
 target := k2rule.Match("baidu.com")
 fmt.Println(target) // DIRECT
@@ -243,11 +243,12 @@ isPorn := k2rule.IsPorn("obscure-porn-site.com")
 // Initialize from remote URL (recommended - auto-download + auto-update)
 // - url: CDN URL of rule file
 // - cacheDir: Cache directory ("" for default ~/.cache/k2rule/, iOS needs Library/Caches path)
-// - fallback: Fallback target when no rules match
-func InitRemote(url string, cacheDir string, fallback Target) error
+// Fallback target is automatically read from the .k2r file header.
+func InitRemote(url string, cacheDir string) error
 
 // Initialize from local file (mmap-based)
-func InitFromFile(path string, fallback Target) error
+// Fallback target is automatically read from the .k2r file header.
+func InitFromFile(path string) error
 
 // Legacy: Initialize from bytes (creates temp file for mmap)
 func InitFromBytes(data []byte) error
@@ -707,6 +708,40 @@ BenchmarkIsPornHeuristic-8   83680   17459 ns/op   0 B/op   0 allocs/op
 - ✅ Same FST format (Rust `fst` crate)
 - ✅ Same matching logic and results
 - ✅ Cross-platform: Linux, macOS, Windows
+
+## 🔄 Migration from v0.2.x to v0.3.0
+
+### Breaking Change: Fallback Parameter Removed
+
+The `fallback` parameter has been removed from `InitRemote` and `InitFromFile`.
+The fallback target is now automatically read from the .k2r file header.
+
+**Before (v0.2.x):**
+```go
+k2rule.InitRemote(url, cacheDir, k2rule.TargetDirect)
+k2rule.InitFromFile(path, k2rule.TargetDirect)
+```
+
+**After (v0.3.0):**
+```go
+k2rule.InitRemote(url, cacheDir)
+k2rule.InitFromFile(path)
+```
+
+**Why this change?**
+- Eliminates confusion between user-provided fallback and file's fallback
+- Ensures behavior matches the rule file's intent (Clash YAML MATCH rule)
+- Simplifies API and reduces potential for errors
+
+**How to migrate:**
+1. Remove the third parameter from `InitRemote` calls
+2. Remove the second parameter from `InitFromFile` calls
+3. If you need a specific fallback, regenerate your .k2r files with the correct `MATCH` rule in the source Clash YAML
+
+**What fallback will be used?**
+- The fallback is read from the .k2r file header
+- For `cn_blacklist.k2r.gz`: `MATCH,DIRECT` → fallback = DIRECT
+- For `cn_whitelist.k2r.gz`: `MATCH,PROXY` → fallback = PROXY
 
 ## Testing
 
