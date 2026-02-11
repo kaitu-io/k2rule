@@ -23,11 +23,23 @@ type Matcher struct {
 
 // InitRemote initializes from a remote URL with auto-download and updates
 // This is the recommended way to use k2rule - provides out-of-the-box functionality
-func InitRemote(url string, fallback Target) error {
+//
+// Parameters:
+//   - url: CDN URL of the rule file (e.g., https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz)
+//   - cacheDir: Cache directory path. Use "" for default (~/.cache/k2rule/).
+//                For iOS, use Library/Caches subdirectory to prevent iCloud sync.
+//   - fallback: Fallback target when no rules match
+//
+// Example (default cache):
+//   k2rule.InitRemote("https://...", "", k2rule.TargetDirect)
+//
+// Example (iOS custom cache):
+//   k2rule.InitRemote("https://...", "/path/to/Library/Caches/k2rule", k2rule.TargetDirect)
+func InitRemote(url string, cacheDir string, fallback Target) error {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
 
-	manager := NewRemoteRuleManager(url, "", fallback)
+	manager := NewRemoteRuleManager(url, cacheDir, fallback)
 	if err := manager.Init(); err != nil {
 		return err
 	}

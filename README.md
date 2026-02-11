@@ -10,6 +10,162 @@
 
 A blazing-fast rule-based routing and filtering system written in Rust, optimized for proxy traffic management, VPN routing, and content filtering. Perfect for GFW bypass, Clash/Shadowsocks/Sing-box integration, and network acceleration solutions.
 
+## 🚀 Quick Start (Go SDK)
+
+### 📦 Installation
+
+```bash
+go get github.com/kaitu-io/k2rule
+```
+
+### ⚡ 3-Line Integration
+
+```go
+// Initialize - Uses pre-built rules (auto-download, cache, auto-update)
+k2rule.InitRemote(
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+    "",  // Use default cache directory ~/.cache/k2rule/
+    k2rule.TargetDirect,
+)
+
+// Start matching
+target := k2rule.Match("google.com")  // Returns PROXY
+```
+
+**📱 iOS Users:** Must specify cache directory to Library/Caches/ to prevent iCloud sync:
+```go
+k2rule.InitRemote(
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+    "/path/to/Library/Caches/k2rule",  // iOS sandbox cache directory
+    k2rule.TargetDirect,
+)
+```
+
+**Features:**
+✅ Auto-download (first run)
+✅ Local cache (~/.cache/k2rule/)
+✅ Auto-update (every 6 hours)
+✅ Low memory (~200KB resident)
+✅ Zero-downtime hot reload
+
+### 🎯 Choose Your Rule Mode
+
+| Mode | Default Behavior | Use Case | CDN URL |
+|------|------------------|----------|---------|
+| **Blacklist (Recommended)** | Default DIRECT | 🇨🇳 China users, mainly domestic content | [`cn_blacklist.k2r.gz`](https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz) |
+| Whitelist | Default PROXY | 🌍 International access priority | [`cn_whitelist.k2r.gz`](https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_whitelist.k2r.gz) |
+
+**Rule Behavior:**
+- **Blacklist**: Unknown domain → DIRECT, GFW sites → PROXY
+- **Whitelist**: Unknown domain → PROXY, China IP → DIRECT
+
+**💡 Tip:** Different URLs use separate cache files, switch anytime without conflicts.
+
+### 📝 Complete Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/kaitu-io/k2rule"
+)
+
+func main() {
+    // Initialize (choose blacklist or whitelist mode)
+    err := k2rule.InitRemote(
+        "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+        "",  // Use default cache directory, iOS users specify Library/Caches path
+        k2rule.TargetDirect,
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    // Domain matching
+    fmt.Println(k2rule.Match("google.com"))     // PROXY
+    fmt.Println(k2rule.Match("baidu.com"))      // DIRECT
+
+    // IP matching
+    fmt.Println(k2rule.Match("8.8.8.8"))        // PROXY
+    fmt.Println(k2rule.Match("114.114.114.114")) // DIRECT
+
+    // Porn detection (optional)
+    if k2rule.IsPorn("example.com") {
+        fmt.Println("Blocked!")
+    }
+}
+```
+
+### 📱 iOS Platform Configuration
+
+**⚠️ Important: iOS users must specify cache directory**
+
+In iOS apps, cache files must be in the sandbox's `Library/Caches/` directory to avoid iCloud sync.
+
+**✅ Correct approach:**
+
+```go
+import (
+    "path/filepath"
+    "os"
+    "github.com/kaitu-io/k2rule"
+)
+
+// Get sandbox cache directory
+cacheDir := filepath.Join(
+    os.Getenv("HOME"),
+    "Library", "Caches", "k2rule",
+)
+
+// Initialize
+err := k2rule.InitRemote(
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+    cacheDir,  // Specify iOS cache directory
+    k2rule.TargetDirect,
+)
+```
+
+**❌ Wrong approach (will sync to iCloud):**
+- `Documents/` - User documents, will sync
+- `Library/Application Support/` - App support files, will sync
+- Not specifying directory (default `~/.cache/k2rule/`) - iOS sandbox not supported
+
+**Why not upload to iCloud?**
+- Rule file size: 3-5 MB (compressed)
+- Update frequency: Checks every 6 hours, daily updates
+- iCloud quota waste + unnecessary sync traffic
+
+### 🔄 Cache & Update Mechanism
+
+**Cache Isolation:**
+Each rule URL uses a separate cache file (based on URL's SHA256 hash):
+```
+~/.cache/k2rule/
+├── abcd1234.k2r.gz  ← cn_blacklist
+├── 5678efgh.k2r.gz  ← cn_whitelist
+└── ...
+```
+
+**Switching Rules:**
+```go
+// Use blacklist first
+k2rule.InitRemote("...cn_blacklist.k2r.gz", "", k2rule.TargetDirect)
+
+// Switch to whitelist later (no conflicts, uses different cache file)
+k2rule.InitRemote("...cn_whitelist.k2r.gz", "", k2rule.TargetProxy)
+```
+
+**Auto-Update Flow:**
+1. Check for updates every 6 hours in background
+2. Send If-None-Match (ETag) request
+3. Server returns 304 Not Modified → Skip download
+4. Server returns 200 OK → Download new rules → Hot reload (zero downtime)
+
+**📖 Full Documentation:** [Go SDK Documentation](README_GO.md)
+
+---
+
 ### ⚡ Performance Highlights
 
 | Feature | Performance |

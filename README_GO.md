@@ -21,6 +21,23 @@ go get github.com/kaitu-io/k2rule
 
 ## 🎯 Quick Start
 
+### 🌐 CDN Rule Resources
+
+**Pre-built rule files:**
+```
+https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz
+https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_whitelist.k2r.gz
+https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.fst.gz
+```
+
+**Update frequency:** Daily auto-update (source: [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules))
+
+**Cache mechanism:**
+- First run: Auto-download to `~/.cache/k2rule/`
+- Subsequent runs: Use cache (5-10ms startup)
+- Auto-update: Background checks every 6 hours (ETag-based, 304 skips download)
+- Multiple rules: Different URLs use independent cache, no conflicts
+
 ### Option 1: Remote Rules (Recommended - Out of the Box!)
 
 Auto-download and auto-update from CDN:
@@ -37,6 +54,7 @@ func main() {
     // Initialize with remote URL (auto-download + auto-update)
     k2rule.InitRemote(
         "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+        "",  // Use default cache directory (~/.cache/k2rule/), iOS users specify Library/Caches path
         k2rule.TargetDirect, // fallback when no rule matches
     )
 
@@ -59,6 +77,45 @@ func main() {
 ```
 
 **Memory usage**: ~200 KB resident + OS page cache (managed automatically)
+
+### 📱 iOS Platform Configuration
+
+**⚠️ Critical: iOS apps must specify cache directory**
+
+iOS apps must place cache files in the sandbox's `Library/Caches/` directory to prevent iCloud sync.
+
+**Correct Implementation:**
+
+```go
+import (
+    "path/filepath"
+    "os"
+    "github.com/kaitu-io/k2rule"
+)
+
+// Get sandbox cache directory
+cacheDir := filepath.Join(
+    os.Getenv("HOME"),
+    "Library", "Caches", "k2rule",
+)
+
+// Initialize with iOS cache directory
+err := k2rule.InitRemote(
+    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+    cacheDir,  // Specify iOS cache directory
+    k2rule.TargetDirect,
+)
+```
+
+**❌ Incorrect (will sync to iCloud):**
+- `Documents/` - User documents, synced
+- `Library/Application Support/` - App support files, synced
+- Empty string `""` (uses `~/.cache/k2rule/`) - Not supported in iOS sandbox
+
+**Why avoid iCloud sync?**
+- Rule file size: 3-5 MB (compressed)
+- Update frequency: Every 6 hours checks, daily updates
+- Wastes iCloud quota + unnecessary sync traffic
 
 ### Option 2: Local File
 
@@ -184,7 +241,10 @@ isPorn := k2rule.IsPorn("obscure-porn-site.com")
 
 ```go
 // Initialize from remote URL (recommended - auto-download + auto-update)
-func InitRemote(url string, fallback Target) error
+// - url: CDN URL of rule file
+// - cacheDir: Cache directory ("" for default ~/.cache/k2rule/, iOS needs Library/Caches path)
+// - fallback: Fallback target when no rules match
+func InitRemote(url string, cacheDir string, fallback Target) error
 
 // Initialize from local file (mmap-based)
 func InitFromFile(path string, fallback Target) error
