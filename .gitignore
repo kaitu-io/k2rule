@@ -18,3 +18,14 @@ Cargo.lock
 
 # Logs
 *.log
+
+# Go build artifacts
+go.sum
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+basic
