@@ -8,113 +8,100 @@ import (
 )
 
 func main() {
-	// Example 0: Remote initialization (recommended - out of the box!)
-	fmt.Println("=== Example 0: Remote initialization (auto-download) ===")
-	remoteURL := "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz"
-	// Use "" for default cache directory (~/.cache/k2rule/)
-	// For iOS: use "/path/to/Library/Caches/k2rule" to prevent iCloud sync
-	// Fallback target is automatically read from the .k2r file header
-	err := k2rule.InitRemote(remoteURL, "")
+	// Example 1: Config-based initialization (v1.0.0+)
+	fmt.Println("=== Example 1: Unified Config Initialization ===")
+
+	config := &k2rule.Config{
+		RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+		GeoIPURL: "", // Default MaxMind
+		PornURL:  "", // Default CDN
+		CacheDir: "", // Default ~/.cache/k2rule/
+		IsGlobal: false,
+	}
+
+	err := k2rule.Init(config)
 	if err != nil {
-		log.Printf("Warning: failed to init from remote: %v", err)
-
-		// Fallback to local file if remote fails
-		fmt.Println("\n=== Example 1: Loading from local k2r file (fallback) ===")
-		err = k2rule.InitFromFile("../../output/cn_blacklist.k2r.gz")
-		if err != nil {
-			log.Printf("Warning: failed to load k2r file: %v (this is expected if file doesn't exist)", err)
-		}
+		log.Fatalf("Init failed: %v", err)
 	}
+	fmt.Println("✓ K2Rule initialized")
 
-	if err == nil {
-		// Match domains
-		testDomains := []string{
-			"google.com",
-			"baidu.com",
-			"youtube.com",
-			"qq.com",
-		}
-
-		fmt.Println("\nDomain matching results:")
-		for _, domain := range testDomains {
-			target := k2rule.MatchDomain(domain)
-			fmt.Printf("  %s -> %s\n", domain, target)
-		}
-
-		// Match IPs
-		testIPs := []string{
-			"8.8.8.8",
-			"114.114.114.114",
-		}
-
-		fmt.Println("\nIP matching results:")
-		for _, ip := range testIPs {
-			target := k2rule.Match(ip)
-			fmt.Printf("  %s -> %s\n", ip, target)
-		}
-	}
-
-	// Example 2: Porn detection (heuristic)
-	fmt.Println("\n=== Example 2: Porn detection (heuristic) ===")
-
-	pornDomains := []string{
-		"pornhub.com",
-		"xvideos.com",
-		"google.com",
-		"freeporn.net",
-		"example.xxx",
-		"microsoft.com",
-	}
-
-	fmt.Println("\nHeuristic porn detection:")
-	for _, domain := range pornDomains {
-		isPorn := k2rule.IsPornHeuristic(domain)
-		status := "✓ PORN"
-		if !isPorn {
-			status = "✗ Clean"
-		}
-		fmt.Printf("  %s: %s\n", domain, status)
-	}
-
-	// Example 3: Automatic type detection
-	fmt.Println("\n=== Example 3: Automatic type detection ===")
+	// Example 2: Matching with automatic LAN bypass
+	fmt.Println("\n=== Example 2: Matching with LAN Bypass ===")
 
 	testInputs := []string{
-		"google.com",
-		"192.168.1.1",
-		"baidu.com",
-		"8.8.8.8",
+		"google.com",            // Domain
+		"192.168.1.1",           // LAN IPv4 → DIRECT
+		"10.0.0.1",              // LAN IPv4 → DIRECT
+		"8.8.8.8",               // Public IPv4
+		"::1",                   // LAN IPv6 → DIRECT
+		"2001:4860:4860::8888",  // Public IPv6
 	}
 
-	fmt.Println("\nAuto-detecting and matching:")
 	for _, input := range testInputs {
-		var inputType string
-		if k2rule.IsIPAddress(input) {
-			inputType = "IP"
-		} else if k2rule.IsDomain(input) {
-			inputType = "Domain"
-		} else {
-			inputType = "Unknown"
+		target := k2rule.Match(input)
+		lanStatus := ""
+		if k2rule.IsPrivateIP(input) {
+			lanStatus = " [LAN]"
 		}
-		fmt.Printf("  %s (%s)\n", input, inputType)
+		fmt.Printf("  %-25s → %s%s\n", input, target, lanStatus)
 	}
 
-	// Example 4: Target enum usage
-	fmt.Println("\n=== Example 4: Target enum usage ===")
+	// Example 3: Global proxy mode toggle
+	fmt.Println("\n=== Example 3: Global Mode Toggle ===")
 
-	targets := []k2rule.Target{
-		k2rule.TargetDirect,
-		k2rule.TargetProxy,
-		k2rule.TargetReject,
+	fmt.Println("Rule-based mode:")
+	k2rule.ToggleGlobal(false)
+	fmt.Printf("  google.com → %s\n", k2rule.Match("google.com"))
+
+	fmt.Println("\nGlobal proxy mode:")
+	k2rule.ToggleGlobal(true)
+	fmt.Printf("  google.com → %s\n", k2rule.Match("google.com"))
+	fmt.Printf("  192.168.1.1 → %s (LAN bypass)\n", k2rule.Match("192.168.1.1"))
+
+	// Switch back to rule-based mode for remaining examples
+	k2rule.ToggleGlobal(false)
+
+	// Example 4: Get current config
+	fmt.Println("\n=== Example 4: Get Current Config ===")
+
+	currentConfig := k2rule.GetConfig()
+	fmt.Printf("  Global mode: %v\n", currentConfig.IsGlobal)
+	fmt.Printf("  Global target: %s\n", currentConfig.GlobalTarget)
+	fmt.Printf("  Cache dir: %s\n", currentConfig.CacheDir)
+
+	// Example 5: Porn detection
+	fmt.Println("\n=== Example 5: Porn Detection ===")
+
+	pornTests := []string{
+		"pornhub.com",
+		"google.com",
+		"xvideos.com",
+		"example.xxx",
 	}
 
-	fmt.Println("\nTarget values:")
-	for _, target := range targets {
-		fmt.Printf("  %s (value: %d)\n", target, target)
+	for _, domain := range pornTests {
+		isPorn := k2rule.IsPorn(domain)
+		status := "Clean"
+		if isPorn {
+			status = "PORN"
+		}
+		fmt.Printf("  %-20s → %s\n", domain, status)
 	}
 
-	// Parse target from string
-	if target, err := k2rule.ParseTarget("proxy"); err == nil {
-		fmt.Printf("\nParsed 'proxy' to: %s\n", target)
+	// Example 6: Pure Global Mode (no rules)
+	fmt.Println("\n=== Example 6: Pure Global Mode (VPN-style) ===")
+
+	globalConfig := &k2rule.Config{
+		IsGlobal:     true,
+		GlobalTarget: k2rule.TargetProxy,
+	}
+
+	err = k2rule.Init(globalConfig)
+	if err != nil {
+		log.Printf("Warning: failed to init global mode: %v", err)
+	} else {
+		fmt.Println("✓ Global mode initialized (no rules)")
+		fmt.Printf("  anything.com → %s\n", k2rule.Match("anything.com"))
+		fmt.Printf("  10.0.0.1 → %s (LAN bypass)\n", k2rule.Match("10.0.0.1"))
 	}
 }

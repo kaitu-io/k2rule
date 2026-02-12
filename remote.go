@@ -14,6 +14,10 @@ import (
 	"github.com/kaitu-io/k2rule/internal/slice"
 )
 
+// DefaultRuleURL is the default rule file URL (China blacklist - foreign sites via proxy)
+// Alternative: cn_whitelist.k2r.gz (China whitelist - domestic sites direct)
+const DefaultRuleURL = "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz"
+
 // RemoteRuleManager manages remote rule files with auto-download and hot-reload
 type RemoteRuleManager struct {
 	url         string                    // Rule file URL
@@ -198,10 +202,10 @@ func (m *RemoteRuleManager) GetGeneration() uint64 {
 	return m.reader.Generation()
 }
 
-// Matching methods (delegate to reader)
+// Internal matching methods (delegate to reader)
 
-// MatchDomain matches a domain
-func (m *RemoteRuleManager) MatchDomain(domain string) Target {
+// matchDomain matches a domain (internal use only)
+func (m *RemoteRuleManager) matchDomain(domain string) Target {
 	target := m.reader.MatchDomain(domain)
 	if target == nil {
 		return m.fallback
@@ -209,8 +213,8 @@ func (m *RemoteRuleManager) MatchDomain(domain string) Target {
 	return Target(*target)
 }
 
-// MatchIP matches an IP address
-func (m *RemoteRuleManager) MatchIP(ip net.IP) Target {
+// matchIPCIDR matches an IP address against IP-CIDR rules only (internal use only)
+func (m *RemoteRuleManager) matchIPCIDR(ip net.IP) Target {
 	target := m.reader.MatchIP(ip)
 	if target == nil {
 		return m.fallback
@@ -218,8 +222,8 @@ func (m *RemoteRuleManager) MatchIP(ip net.IP) Target {
 	return Target(*target)
 }
 
-// MatchGeoIP matches a GeoIP country code
-func (m *RemoteRuleManager) MatchGeoIP(country string) Target {
+// matchGeoIP matches a GeoIP country code (internal use only)
+func (m *RemoteRuleManager) matchGeoIP(country string) Target {
 	target := m.reader.MatchGeoIP(country)
 	if target == nil {
 		return m.fallback
