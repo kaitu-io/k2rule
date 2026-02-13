@@ -17,6 +17,7 @@ var (
 	globalPornManager *PornRemoteManager
 	globalMatcher     *Matcher
 	globalMutex       sync.RWMutex
+	globalTmpRules    sync.Map // key: string (input), value: Target
 )
 
 // Matcher provides rule matching functionality
@@ -232,9 +233,10 @@ func UpdateConfig(config *Config) error {
 //
 // Priority (from highest to lowest):
 //  1. LAN/Private IPs → DIRECT (hardcoded, always bypassed)
-//  2. Global mode → GlobalTarget (if IsGlobal = true)
-//  3. Rule matching → Domain/IP-CIDR/GeoIP rules
-//  4. Fallback → Rule file fallback or GlobalTarget
+//  2. TmpRule → Exact match override (set via SetTmpRule)
+//  3. Global mode → GlobalTarget (if IsGlobal = true)
+//  4. Rule matching → Domain/IP-CIDR/GeoIP rules
+//  5. Fallback → Rule file fallback or GlobalTarget
 //
 // Handles:
 //   - Automatic type detection (domain/IPv4/IPv6)
@@ -265,18 +267,23 @@ func Match(input string) Target {
 			return TargetDirect
 		}
 
-		// Step 1b: Check global mode
+		// Step 1b: Check TmpRule (exact match, higher priority than Global/static)
+		if target, ok := globalTmpRules.Load(input); ok {
+			return target.(Target)
+		}
+
+		// Step 1c: Check global mode
 		if config != nil && config.IsGlobal {
 			return config.GlobalTarget
 		}
 
-		// Step 1c: Check IP-CIDR rules (if rules loaded)
+		// Step 1d: Check IP-CIDR rules (if rules loaded)
 		if manager != nil {
 			if target := manager.matchIPCIDR(ip); target != manager.fallback {
 				return target
 			}
 
-			// Step 1d: Check GeoIP rules (if GeoIP initialized)
+			// Step 1e: Check GeoIP rules (if GeoIP initialized)
 			if geoIPMgr != nil {
 				if country, err := geoIPMgr.LookupCountry(ip); err == nil {
 					if target := manager.matchGeoIP(country); target != manager.fallback {
@@ -285,7 +292,7 @@ func Match(input string) Target {
 				}
 			}
 
-			// Step 1e: Return fallback
+			// Step 1f: Return fallback
 			return manager.fallback
 		}
 
@@ -317,12 +324,17 @@ func Match(input string) Target {
 	}
 
 	// Step 2: Treat as domain
-	// Step 2a: Check global mode
+	// Step 2a: Check TmpRule (exact match, higher priority than Global/static)
+	if target, ok := globalTmpRules.Load(input); ok {
+		return target.(Target)
+	}
+
+	// Step 2b: Check global mode
 	if config != nil && config.IsGlobal {
 		return config.GlobalTarget
 	}
 
-	// Step 2b: Check domain rules (if rules loaded)
+	// Step 2c: Check domain rules (if rules loaded)
 	if manager != nil {
 		if target := manager.matchDomain(input); target != manager.fallback {
 			return target
@@ -412,6 +424,71 @@ func IsPorn(domain string) bool {
 
 	// Fallback to heuristic only
 	return IsPornHeuristic(domain)
+}
+
+// SetTmpRule sets a temporary rule override for the given input (IP or domain).
+// TmpRule has higher priority than Global mode and static rules, but lower than LAN bypass.
+// If the static rules already return the same target, the override is not stored (storage optimization).
+func SetTmpRule(input string, target Target) {
+	// Storage optimization: skip storing if static rules already return the same target
+	// AND global mode is not active (since TmpRule must override Global mode).
+	globalMutex.RLock()
+	isGlobal := globalConfig != nil && globalConfig.IsGlobal
+	globalMutex.RUnlock()
+
+	if !isGlobal {
+		staticTarget := matchStaticRules(input)
+		if staticTarget == target {
+			globalTmpRules.Delete(input) // clear any existing override
+			return
+		}
+	}
+	globalTmpRules.Store(input, target)
+}
+
+// ClearTmpRule removes a single temporary rule override.
+func ClearTmpRule(input string) {
+	globalTmpRules.Delete(input)
+}
+
+// ClearTmpRules removes all temporary rule overrides.
+func ClearTmpRules() {
+	globalTmpRules.Range(func(key, _ any) bool {
+		globalTmpRules.Delete(key)
+		return true
+	})
+}
+
+// matchStaticRules matches input against static rules only (IP-CIDR / GeoIP / Domain).
+// Does not check LAN, Global mode, or TmpRule — used by SetTmpRule for storage optimization.
+func matchStaticRules(input string) Target {
+	globalMutex.RLock()
+	manager := globalManager
+	geoIPMgr := globalGeoIPMgr
+	globalMutex.RUnlock()
+
+	if manager == nil {
+		return TargetDirect
+	}
+
+	if ip := net.ParseIP(input); ip != nil {
+		if target := manager.matchIPCIDR(ip); target != manager.fallback {
+			return target
+		}
+		if geoIPMgr != nil {
+			if country, err := geoIPMgr.LookupCountry(ip); err == nil {
+				if target := manager.matchGeoIP(country); target != manager.fallback {
+					return target
+				}
+			}
+		}
+		return manager.fallback
+	}
+
+	if target := manager.matchDomain(input); target != manager.fallback {
+		return target
+	}
+	return manager.fallback
 }
 
 // Helper functions
