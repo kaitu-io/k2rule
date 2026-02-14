@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	mmap "github.com/edsrzf/mmap-go"
 )
 
 // MmapReader provides zero-copy access to K2Rule files using memory-mapped I/O
 type MmapReader struct {
 	file    *os.File      // File handle
-	data    []byte        // Memory-mapped region (zero-copy)
+	data    mmap.MMap     // Memory-mapped region (zero-copy)
 	size    int64         // File size
 	header  *SliceHeader  // Parsed header (resident in memory ~64 bytes)
 	entries []*SliceEntry // Slice entries (resident in memory ~100s of bytes)
@@ -39,8 +41,8 @@ func NewMmapReader(path string) (*MmapReader, error) {
 		return nil, fmt.Errorf("file is empty")
 	}
 
-	// Memory-map the file (zero-copy on Unix, ReadAll on Windows)
-	data, err := platformMmap(file, int(size))
+	// Memory-map the file (zero-copy on all platforms)
+	data, err := mmap.Map(file, mmap.RDONLY, 0)
 	if err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to mmap file: %w", err)
@@ -69,7 +71,7 @@ func NewMmapReaderFromGzip(gzipPath string) (*MmapReader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute file hash: %w", err)
 	}
-	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("k2rule-%s.bin", hash))
+	tmpPath := filepath.Join(filepath.Dir(gzipPath), fmt.Sprintf("k2rule-%s.bin", hash))
 
 	// 2. Check if temp file already exists (cache hit)
 	if _, err := os.Stat(tmpPath); err == nil {
@@ -90,7 +92,7 @@ func NewMmapReaderFromGzip(gzipPath string) (*MmapReader, error) {
 func (r *MmapReader) Close() error {
 	var err error
 	if r.data != nil {
-		if unmapErr := platformMunmap(r.data); unmapErr != nil {
+		if unmapErr := r.data.Unmap(); unmapErr != nil {
 			err = unmapErr
 		}
 		r.data = nil
