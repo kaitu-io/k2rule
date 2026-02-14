@@ -29,3 +29,7 @@ go.sum
 *.test
 *.out
 examples/basic/basic
+
+# word9f artifacts
+docs/features/
+docs/todos/
