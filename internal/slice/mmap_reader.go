@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // MmapReader provides zero-copy access to K2Rule files using memory-mapped I/O
@@ -40,14 +39,8 @@ func NewMmapReader(path string) (*MmapReader, error) {
 		return nil, fmt.Errorf("file is empty")
 	}
 
-	// Memory-map the file (zero-copy)
-	data, err := syscall.Mmap(
-		int(file.Fd()),
-		0,                     // offset
-		int(size),             // length
-		syscall.PROT_READ,     // protection: read-only
-		syscall.MAP_SHARED,    // flags: shared mapping
-	)
+	// Memory-map the file (zero-copy on Unix, ReadAll on Windows)
+	data, err := platformMmap(file, int(size))
 	if err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to mmap file: %w", err)
@@ -97,7 +90,7 @@ func NewMmapReaderFromGzip(gzipPath string) (*MmapReader, error) {
 func (r *MmapReader) Close() error {
 	var err error
 	if r.data != nil {
-		if unmapErr := syscall.Munmap(r.data); unmapErr != nil {
+		if unmapErr := platformMunmap(r.data); unmapErr != nil {
 			err = unmapErr
 		}
 		r.data = nil
