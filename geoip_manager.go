@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -56,16 +57,19 @@ func (m *GeoIPManager) Init() error {
 	if _, err := os.Stat(cachedPath); err == nil {
 		// Cache exists, try to load it
 		if err := m.loadDatabase(cachedPath); err == nil {
+			slog.Info("geoip loaded from cache")
 			// Successfully loaded from cache, start background update check
 			go m.startAutoUpdate()
 			return nil
 		}
 		// Cache corrupted, will re-download
+		slog.Warn("geoip cache corrupted, will re-download")
 	}
 
 	// 2. Cache doesn't exist or is corrupted, download in background (non-blocking)
+	slog.Info("geoip cache not found, downloading in background")
 	go func() {
-		retryForever(func() error { return m.downloadAndLoad(false) })
+		retryForever("geoip", func() error { return m.downloadAndLoad(false) })
 		m.startAutoUpdate()
 	}()
 
@@ -122,6 +126,8 @@ func (m *GeoIPManager) downloadAndLoad(useETag bool) error {
 		req.Header.Set("If-None-Match", currentETag)
 	}
 
+	slog.Debug("downloading geoip", "url", m.url)
+
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -131,6 +137,7 @@ func (m *GeoIPManager) downloadAndLoad(useETag bool) error {
 
 	// 304 Not Modified - no need to update
 	if resp.StatusCode == http.StatusNotModified {
+		slog.Debug("geoip not modified")
 		return nil
 	}
 
@@ -183,6 +190,8 @@ func (m *GeoIPManager) downloadAndLoad(useETag bool) error {
 	m.lastUpdate = time.Now()
 	m.mu.Unlock()
 
+	slog.Info("geoip downloaded and loaded")
+
 	return nil
 }
 
@@ -216,7 +225,9 @@ func (m *GeoIPManager) startAutoUpdate() {
 		select {
 		case <-ticker.C:
 			// Check for updates (use ETag)
-			m.downloadAndLoad(true)
+			if err := m.downloadAndLoad(true); err != nil {
+				slog.Warn("geoip auto-update failed", "error", err)
+			}
 		case <-m.stopCh:
 			return
 		}

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -55,6 +56,7 @@ func (m *RemoteRuleManager) Init() error {
 	if _, err := os.Stat(cachedPath); err == nil {
 		// Cache exists, try to load it
 		if err := m.reader.Load(cachedPath); err == nil {
+			slog.Info("rules loaded from cache")
 			// Sync fallback from loaded file
 			m.fallback = Target(m.reader.Fallback())
 			// Successfully loaded from cache, start background update check
@@ -62,11 +64,13 @@ func (m *RemoteRuleManager) Init() error {
 			return nil
 		}
 		// Cache corrupted, will re-download
+		slog.Warn("rules cache corrupted, will re-download")
 	}
 
 	// 2. Cache doesn't exist or is corrupted, download in background (non-blocking)
+	slog.Info("rules cache not found, downloading in background")
 	go func() {
-		retryForever(func() error { return m.downloadAndLoad(false) })
+		retryForever("rules", func() error { return m.downloadAndLoad(false) })
 		m.startAutoUpdate()
 	}()
 
@@ -99,6 +103,8 @@ func (m *RemoteRuleManager) downloadAndLoad(useETag bool) error {
 		req.Header.Set("If-None-Match", currentETag)
 	}
 
+	slog.Debug("downloading rules", "url", m.url)
+
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -108,6 +114,7 @@ func (m *RemoteRuleManager) downloadAndLoad(useETag bool) error {
 
 	// 304 Not Modified - no need to update
 	if resp.StatusCode == http.StatusNotModified {
+		slog.Debug("rules not modified")
 		return nil
 	}
 
@@ -150,6 +157,8 @@ func (m *RemoteRuleManager) downloadAndLoad(useETag bool) error {
 	m.lastUpdate = time.Now()
 	m.mu.Unlock()
 
+	slog.Info("rules downloaded and loaded")
+
 	return nil
 }
 
@@ -162,7 +171,9 @@ func (m *RemoteRuleManager) startAutoUpdate() {
 		select {
 		case <-ticker.C:
 			// Check for updates (use ETag)
-			m.downloadAndLoad(true)
+			if err := m.downloadAndLoad(true); err != nil {
+				slog.Warn("rules auto-update failed", "error", err)
+			}
 		case <-m.stopCh:
 			return
 		}

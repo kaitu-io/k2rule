@@ -8,7 +8,7 @@ import (
 
 func TestRetryForever_SucceedsImmediately(t *testing.T) {
 	calls := 0
-	retryForever(func() error {
+	retryForever("test", func() error {
 		calls++
 		return nil
 	})
@@ -19,7 +19,7 @@ func TestRetryForever_SucceedsImmediately(t *testing.T) {
 
 func TestRetryForever_SucceedsAfterRetries(t *testing.T) {
 	calls := 0
-	retryForever(func() error {
+	retryForever("test", func() error {
 		calls++
 		if calls < 3 {
 			return fmt.Errorf("fail %d", calls)
