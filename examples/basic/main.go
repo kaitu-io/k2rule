@@ -15,7 +15,13 @@ func main() {
 		RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
 		GeoIPURL: "", // Default MaxMind
 		PornURL:  "", // Default CDN
-		CacheDir: "", // Default ~/.cache/k2rule/
+		CacheDir: "/tmp/k2rule-example", // REQUIRED: caller must provide platform-specific cache directory
+		// Platform examples:
+		//   macOS app:    ~/Library/Caches/com.kaitu.app/k2rule
+		//   macOS daemon: /var/tmp/k2rule
+		//   iOS:          NSCachesDirectory (from Swift bridge)
+		//   Android:      context.getCacheDir() (from JNI)
+		//   Windows:      %LocalAppData%\k2rule\cache
 		IsGlobal: false,
 	}
 
@@ -94,6 +100,7 @@ func main() {
 	globalConfig := &k2rule.Config{
 		IsGlobal:     true,
 		GlobalTarget: k2rule.TargetProxy,
+		CacheDir:     "/tmp/k2rule-example", // REQUIRED
 	}
 
 	err = k2rule.Init(globalConfig)
