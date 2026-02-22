@@ -163,7 +163,9 @@ func TestInit_WithGeoIP_DefaultURL(t *testing.T) {
 
 func TestInit_WithGeoIPFile_NotFound(t *testing.T) {
 	config := &Config{
-		GeoIPFile: "/nonexistent/path/GeoLite2-Country.mmdb",
+		GeoIPFile:    "/nonexistent/path/GeoLite2-Country.mmdb",
+		IsGlobal:     true, // skip rule manager init (retryForever would block)
+		GlobalTarget: TargetProxy,
 	}
 	err := Init(config)
 	if err == nil {

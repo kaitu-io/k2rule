@@ -34,11 +34,6 @@ type RemoteRuleManager struct {
 
 // NewRemoteRuleManager creates a new remote rule manager
 func NewRemoteRuleManager(url, cacheDir string, fallback Target) *RemoteRuleManager {
-	if cacheDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		cacheDir = filepath.Join(homeDir, ".cache", "k2rule")
-	}
-
 	return &RemoteRuleManager{
 		url:      url,
 		cacheDir: cacheDir,
@@ -70,9 +65,7 @@ func (m *RemoteRuleManager) Init() error {
 	}
 
 	// 2. Cache doesn't exist or is corrupted, force download
-	if err := m.downloadAndLoad(false); err != nil {
-		return fmt.Errorf("failed to download rules: %w", err)
-	}
+	retryForever(func() error { return m.downloadAndLoad(false) })
 
 	// 3. Start auto-update
 	go m.startAutoUpdate()

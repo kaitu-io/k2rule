@@ -33,11 +33,6 @@ func NewPornRemoteManager(url, cacheDir string) *PornRemoteManager {
 		url = DefaultPornURL
 	}
 
-	if cacheDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		cacheDir = filepath.Join(homeDir, ".cache", "k2rule")
-	}
-
 	return &PornRemoteManager{
 		url:      url,
 		cacheDir: cacheDir,
@@ -65,9 +60,7 @@ func (m *PornRemoteManager) Init() error {
 	}
 
 	// 2. Cache doesn't exist or is corrupted, force download
-	if err := m.downloadAndLoad(false); err != nil {
-		return fmt.Errorf("failed to download porn database: %w", err)
-	}
+	retryForever(func() error { return m.downloadAndLoad(false) })
 
 	// 3. Start auto-update
 	go m.startAutoUpdate()

@@ -79,3 +79,10 @@ func TestNewGeoIPManager_CustomCacheDir(t *testing.T) {
 		t.Errorf("Expected custom cache dir %s, got %s", customDir, manager.cacheDir)
 	}
 }
+
+func TestNewGeoIPManager_NoCacheDirFallback(t *testing.T) {
+	manager := NewGeoIPManager("", "")
+	if manager.cacheDir != "" {
+		t.Errorf("expected empty cacheDir, got %q", manager.cacheDir)
+	}
+}
