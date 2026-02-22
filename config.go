@@ -2,8 +2,6 @@ package k2rule
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // Config holds all K2Rule initialization settings.
@@ -42,6 +40,9 @@ type Config struct {
 // - Both GeoIPURL and GeoIPFile are set
 // - Both PornURL and PornFile are set
 func (c *Config) Validate() error {
+	if c.CacheDir == "" {
+		return fmt.Errorf("CacheDir is required")
+	}
 	if c.RuleURL != "" && c.RuleFile != "" {
 		return fmt.Errorf("cannot specify both RuleURL and RuleFile")
 	}
@@ -65,9 +66,5 @@ func (c *Config) Validate() error {
 func (c *Config) SetDefaults() {
 	if c.GlobalTarget == 0 {
 		c.GlobalTarget = TargetProxy // Default global target
-	}
-	if c.CacheDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		c.CacheDir = filepath.Join(homeDir, ".cache", "k2rule")
 	}
 }
