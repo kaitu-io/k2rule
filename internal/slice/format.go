@@ -42,8 +42,8 @@ const (
 // String returns the string representation of SliceType
 func (t SliceType) String() string {
 	switch t {
-	case SliceTypeFstDomain:
-		return "FstDomain"
+	case SliceTypeSortedDomain:
+		return "SortedDomain"
 	case SliceTypeCidrV4:
 		return "CidrV4"
 	case SliceTypeCidrV6:
