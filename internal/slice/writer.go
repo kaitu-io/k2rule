@@ -209,7 +209,7 @@ func (w *SliceWriter) Build() ([]byte, error) {
 
 	// --- Write header (64 bytes) ---
 	// Magic [8]byte
-	copy(out[0:8], "K2RULEV3")
+	copy(out[0:8], Magic)
 	// Version uint32 LE
 	binary.LittleEndian.PutUint32(out[8:12], FormatVersion)
 	// SliceCount uint32 LE

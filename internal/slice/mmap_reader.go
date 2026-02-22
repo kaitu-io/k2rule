@@ -176,7 +176,7 @@ func (r *MmapReader) MatchDomain(domain string) *uint8 {
 	normalized := strings.ToLower(domain)
 
 	for _, entry := range r.entries {
-		if entry.GetType() != SliceTypeFstDomain {
+		if entry.GetType() != SliceTypeSortedDomain {
 			continue
 		}
 
