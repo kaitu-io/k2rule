@@ -22,10 +22,11 @@ go get github.com/kaitu-io/k2rule
 
 ```go
 // Initialize - Uses pre-built rules (auto-download, cache, auto-update)
-k2rule.InitRemote(
-    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
-    "",  // Use default cache directory ~/.cache/k2rule/
-)
+config := &k2rule.Config{
+    RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+    CacheDir: "/tmp/k2rule",  // REQUIRED: caller must provide writable directory
+}
+k2rule.Init(config)
 
 // Start matching
 target := k2rule.Match("google.com")  // Returns PROXY
@@ -33,17 +34,18 @@ target := k2rule.Match("google.com")  // Returns PROXY
 
 **💡 Note:** The fallback target (DIRECT, PROXY, or REJECT) is automatically read from the .k2r file header, which comes from the Clash YAML's `MATCH` rule. You don't need to specify it manually.
 
-**📱 iOS Users:** Must specify cache directory to Library/Caches/ to prevent iCloud sync:
+**📱 CacheDir is platform-specific:**
 ```go
-k2rule.InitRemote(
-    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
-    "/path/to/Library/Caches/k2rule",  // iOS sandbox cache directory
-)
+// macOS app:    ~/Library/Caches/com.kaitu.app/k2rule
+// macOS daemon: /var/tmp/k2rule
+// iOS:          NSCachesDirectory (from Swift bridge)
+// Android:      context.getCacheDir() (from JNI)
+// Windows:      %LocalAppData%\k2rule\cache
 ```
 
 **Features:**
-✅ Auto-download (first run)
-✅ Local cache (~/.cache/k2rule/)
+✅ Auto-download with infinite retry (exponential backoff, cap 64s)
+✅ Local cache in caller-specified directory
 ✅ Auto-update (every 6 hours)
 ✅ Low memory (~200KB resident)
 ✅ Zero-downtime hot reload
@@ -72,11 +74,12 @@ import (
 )
 
 func main() {
-    // Initialize (choose blacklist or whitelist mode)
-    err := k2rule.InitRemote(
-        "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
-        "",  // Use default cache directory, iOS users specify Library/Caches path
-    )
+    // Initialize with unified config (CacheDir is REQUIRED)
+    config := &k2rule.Config{
+        RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+        CacheDir: "/tmp/k2rule",  // REQUIRED: platform-specific writable directory
+    }
+    err := k2rule.Init(config)
     if err != nil {
         panic(err)
     }
@@ -98,9 +101,9 @@ func main() {
 
 ### 📱 iOS Platform Configuration
 
-**⚠️ Important: iOS users must specify cache directory**
+**⚠️ Important: CacheDir is REQUIRED on all platforms**
 
-In iOS apps, cache files must be in the sandbox's `Library/Caches/` directory to avoid iCloud sync.
+The caller must provide a platform-appropriate writable directory. On iOS, use `Library/Caches/` to avoid iCloud sync.
 
 **✅ Correct approach:**
 
@@ -118,41 +121,33 @@ cacheDir := filepath.Join(
 )
 
 // Initialize
-err := k2rule.InitRemote(
-    "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
-    cacheDir,  // Specify iOS cache directory
-)
+config := &k2rule.Config{
+    RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+    CacheDir: cacheDir,  // iOS sandbox cache directory
+}
+k2rule.Init(config)
 ```
 
 **❌ Wrong approach (will sync to iCloud):**
 - `Documents/` - User documents, will sync
 - `Library/Application Support/` - App support files, will sync
-- Not specifying directory (default `~/.cache/k2rule/`) - iOS sandbox not supported
-
-**Why not upload to iCloud?**
-- Rule file size: 3-5 MB (compressed)
-- Update frequency: Checks every 6 hours, daily updates
-- iCloud quota waste + unnecessary sync traffic
 
 ### 🔄 Cache & Update Mechanism
 
 **Cache Isolation:**
 Each rule URL uses a separate cache file (based on URL's SHA256 hash):
 ```
-~/.cache/k2rule/
+{CacheDir}/
 ├── abcd1234.k2r.gz  ← cn_blacklist
 ├── 5678efgh.k2r.gz  ← cn_whitelist
+├── abcd1234.mmdb    ← GeoIP database
 └── ...
 ```
 
-**Switching Rules:**
-```go
-// Use blacklist first
-k2rule.InitRemote("...cn_blacklist.k2r.gz", "")
-
-// Switch to whitelist later (no conflicts, uses different cache file)
-k2rule.InitRemote("...cn_whitelist.k2r.gz", "")
-```
+**Download Retry:**
+All downloads use infinite retry with exponential backoff:
+- 1s → 2s → 4s → 8s → 16s → 32s → 64s → 64s → ...
+- Init() blocks until all resources are available
 
 **Auto-Update Flow:**
 1. Check for updates every 6 hours in background
@@ -346,8 +341,12 @@ import (
 )
 
 func main() {
-    // Load rules from file
-    err := k2rule.InitFromFile("cn_blacklist.k2r.gz")
+    // Initialize with unified config (CacheDir is REQUIRED)
+    config := &k2rule.Config{
+        RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+        CacheDir: "/tmp/k2rule",  // REQUIRED
+    }
+    err := k2rule.Init(config)
     if err != nil {
         panic(err)
     }

@@ -7,7 +7,8 @@ High-performance rule engine for VPN/proxy traffic routing and content filtering
 - ✅ **Unified Config API**: Single `Init(config)` for all initialization - no repeated parameters
 - ✅ **Global Proxy Mode**: Toggle between VPN-style全局代理 and rule-based routing at runtime
 - ✅ **LAN IP Bypass**: Automatic detection of private/LAN IPs (always DIRECT)
-- ✅ **Out-of-the-box**: Auto-download rules from CDN, no manual setup
+- ✅ **Out-of-the-box**: Auto-download rules from CDN with infinite retry
+- ✅ **Resilient downloads**: Exponential backoff (1s→2s→4s→...→64s cap), never gives up
 - ✅ **Memory-efficient**: Uses memory-mapped files (~200 KB resident memory vs 5-10 MB with full loading)
 - ✅ **Hot-reload**: Seamless rule updates without service interruption
 - ✅ **Auto-update**: Background checks every 6 hours with ETag optimization
@@ -34,7 +35,7 @@ func main() {
         RuleURL:  "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
         GeoIPURL: "",  // Use default MaxMind GeoLite2
         PornURL:  "",  // Use default porn database
-        CacheDir: "",  // Use default ~/.cache/k2rule/
+        CacheDir: "/tmp/k2rule",  // REQUIRED: caller must provide a writable directory
     }
 
     k2rule.Init(config)
@@ -53,6 +54,7 @@ func main() {
 config := &k2rule.Config{
     IsGlobal:     true,
     GlobalTarget: k2rule.TargetProxy,
+    CacheDir:     "/tmp/k2rule",  // REQUIRED
 }
 k2rule.Init(config)
 
@@ -72,6 +74,7 @@ k2rule.ToggleGlobal(true)    // Back to global mode
 config := &k2rule.Config{
     IsGlobal:     true,
     GlobalTarget: k2rule.TargetProxy,
+    CacheDir:     "/tmp/k2rule",  // REQUIRED
 }
 k2rule.Init(config)
 
@@ -92,8 +95,9 @@ https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.fst.gz
 **Update frequency:** Daily auto-update (source: [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules))
 
 **Cache mechanism:**
-- First run: Auto-download to `~/.cache/k2rule/`
+- First run: Auto-download to caller-specified `CacheDir`
 - Subsequent runs: Use cache (5-10ms startup)
+- Download retry: Infinite retry with exponential backoff (1s, 2s, 4s, ..., cap 64s)
 - Auto-update: Background checks every 6 hours (ETag-based, 304 skips download)
 
 ## 📖 API Reference
@@ -115,7 +119,7 @@ type Config struct {
     PornFile string  // Local .fst.gz file path
 
     // Shared settings
-    CacheDir string  // "" = default ~/.cache/k2rule/, shared by all components
+    CacheDir string  // REQUIRED: writable directory for downloaded files
 
     // Global proxy mode
     IsGlobal     bool   // true = global proxy mode, false = rule-based mode
@@ -183,7 +187,7 @@ config := &k2rule.Config{
     RuleURL:      "https://cdn.../cn_blacklist.k2r.gz",
     GeoIPURL:     "",  // Use default MaxMind GeoLite2
     PornURL:      "",  // Use default porn database
-    CacheDir:     "",  // Use default ~/.cache/k2rule/
+    CacheDir:     "/var/tmp/k2rule",  // REQUIRED: platform-specific writable directory
     IsGlobal:     false,
     GlobalTarget: k2rule.TargetProxy,
 }
@@ -204,28 +208,34 @@ config := &k2rule.Config{
 k2rule.Init(config)
 ```
 
-### iOS App Configuration
+### Platform-Specific CacheDir
 
 ```go
-import "path/filepath"
+// macOS app
+config.CacheDir = filepath.Join(os.Getenv("HOME"), "Library", "Caches", "com.kaitu.app", "k2rule")
 
-// Get app's Library/Caches directory
-documentsURL, _ := os.UserConfigDir()
-cacheDir := filepath.Join(documentsURL, "..", "Library", "Caches", "k2rule")
+// macOS daemon (LaunchDaemon)
+config.CacheDir = "/var/tmp/k2rule"
 
-config := &k2rule.Config{
-    RuleURL:  "https://cdn.../cn_blacklist.k2r.gz",
-    CacheDir: cacheDir,  // iOS sandbox-safe location
-}
+// iOS (from Swift/ObjC bridge — NSCachesDirectory)
+config.CacheDir = iosCachesDir + "/k2rule"
 
-k2rule.Init(config)
+// Android (from JNI — context.getCacheDir())
+config.CacheDir = androidCacheDir + "/k2rule"
+
+// Linux
+config.CacheDir = "/var/cache/k2rule"
+
+// Windows
+config.CacheDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "k2rule", "cache")
 ```
 
 ### Rules-Only (No GeoIP or Porn Detection)
 
 ```go
 config := &k2rule.Config{
-    RuleURL: "https://cdn.../cn_blacklist.k2r.gz",
+    RuleURL:  "https://cdn.../cn_blacklist.k2r.gz",
+    CacheDir: "/tmp/k2rule",  // REQUIRED
 }
 
 k2rule.Init(config)
@@ -254,7 +264,7 @@ k2rule.Match("10.0.0.1")     // → DIRECT (always)
 k2rule.Match("::1")          // → DIRECT (always)
 
 // Even in global mode, LAN IPs go DIRECT
-config := &k2rule.Config{IsGlobal: true, GlobalTarget: k2rule.TargetProxy}
+config := &k2rule.Config{IsGlobal: true, GlobalTarget: k2rule.TargetProxy, CacheDir: "/tmp/k2rule"}
 k2rule.Init(config)
 k2rule.Match("192.168.1.1")  // → DIRECT (LAN bypass)
 ```
@@ -291,7 +301,8 @@ When compiled to `.k2r`, this `MATCH,DIRECT` is stored in the file header as the
 ```go
 // Rules loaded → fallback from file
 config := &k2rule.Config{
-    RuleURL: "https://.../cn_blacklist.k2r.gz",
+    RuleURL:  "https://.../cn_blacklist.k2r.gz",
+    CacheDir: "/tmp/k2rule",
 }
 k2rule.Init(config)
 k2rule.Match("unmatched.com")  // → DIRECT (from k2r file's MATCH rule)
@@ -300,6 +311,7 @@ k2rule.Match("unmatched.com")  // → DIRECT (from k2r file's MATCH rule)
 config := &k2rule.Config{
     IsGlobal:     true,
     GlobalTarget: k2rule.TargetProxy,
+    CacheDir:     "/tmp/k2rule",
 }
 k2rule.Init(config)
 k2rule.Match("anything.com")  // → PROXY (from GlobalTarget)
@@ -313,6 +325,7 @@ k2rule.Match("anything.com")  // → PROXY (from GlobalTarget)
 // Start in rule-based mode
 config := &k2rule.Config{
     RuleURL:  "https://.../rules.k2r.gz",
+    CacheDir: "/tmp/k2rule",  // REQUIRED
     IsGlobal: false,
 }
 k2rule.Init(config)
@@ -350,6 +363,7 @@ fmt.Printf("Cache dir: %s\n", config.CacheDir)
 ```go
 newConfig := &k2rule.Config{
     RuleURL:  "https://new-rules.k2r.gz",
+    CacheDir: "/tmp/k2rule",  // REQUIRED
     IsGlobal: false,
 }
 k2rule.UpdateConfig(newConfig)  // Re-initializes all components
@@ -360,8 +374,9 @@ k2rule.UpdateConfig(newConfig)  // Re-initializes all components
 ```go
 // Initialize with porn detection
 config := &k2rule.Config{
-    RuleURL: "https://.../cn_blacklist.k2r.gz",
-    PornURL: "",  // Use default CDN
+    RuleURL:  "https://.../cn_blacklist.k2r.gz",
+    PornURL:  "",  // Use default CDN
+    CacheDir: "/tmp/k2rule",  // REQUIRED
 }
 k2rule.Init(config)
 
@@ -407,11 +422,12 @@ k2rule.InitPornRemote("", "")
 
 **New API (v1.0.0) - ONE INIT METHOD:**
 ```go
-// ✅ Unified config-based initialization
+// ✅ Unified config-based initialization (CacheDir is REQUIRED)
 k2rule.Init(&k2rule.Config{
     RuleURL:  "https://.../rules.k2r.gz",
     GeoIPURL: "",
     PornURL:  "",
+    CacheDir: "/tmp/k2rule",
 })
 ```
 
@@ -432,8 +448,9 @@ target := k2rule.Match("google.com")
 // Single Init call, all configuration in one place
 config := &k2rule.Config{
     RuleURL:  "https://.../cn_blacklist.k2r.gz",
-    GeoIPURL: "",  // Shared cacheDir, no repetition
+    GeoIPURL: "",
     PornURL:  "",
+    CacheDir: "/tmp/k2rule",  // REQUIRED
 }
 k2rule.Init(config)
 
@@ -447,6 +464,8 @@ target := k2rule.Match("google.com")
 - ✨ Automatic LAN IP bypass (hardcoded)
 - ✨ Runtime configuration APIs (ToggleGlobal, SetGlobalTarget, GetConfig, UpdateConfig)
 - ✨ Pure global mode (no rules required)
+- ✨ CacheDir is now required (caller-provided, cross-platform safe)
+- ✨ Resilient downloads with infinite retry + exponential backoff (cap 64s)
 
 ## 📝 License
 
