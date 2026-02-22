@@ -1,4 +1,4 @@
-// Package clash provides conversion from Clash YAML configurations to K2RULEV2 binary format.
+// Package clash provides conversion from Clash YAML configurations to K2RULEV3 binary format.
 package clash
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/kaitu-io/k2rule/internal/slice"
 )
 
-// target constants matching Rust and Go codebase values.
+// target constants matching Go codebase values.
 const (
 	targetDirect uint8 = 0
 	targetProxy  uint8 = 1
@@ -81,7 +81,7 @@ type ruleProvider struct {
 	URL      string   `yaml:"url"`
 }
 
-// SliceConverter converts Clash YAML configurations to K2RULEV2 binary format.
+// SliceConverter converts Clash YAML configurations to K2RULEV3 binary format.
 type SliceConverter struct {
 	// providerRules holds preloaded or externally set provider rules.
 	// Keys are provider names; values are lists of rule strings.
@@ -131,7 +131,7 @@ func (c *SliceConverter) LoadProvider(name, content string) error {
 	return nil
 }
 
-// Convert parses a Clash YAML configuration and produces K2RULEV2 binary data.
+// Convert parses a Clash YAML configuration and produces K2RULEV3 binary data.
 func (c *SliceConverter) Convert(yamlContent string) ([]byte, error) {
 	var config clashConfig
 	if err := yaml.Unmarshal([]byte(yamlContent), &config); err != nil {

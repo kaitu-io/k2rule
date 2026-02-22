@@ -1,23 +1,23 @@
 # Porn Domain Heuristic Detection
 
-Fast, pattern-based porn domain detection with **48.9% coverage** and zero false positives.
+Fast, pattern-based porn domain detection with **~47% coverage** and zero false positives.
 
 ## Overview
 
-K2Rule uses intelligent heuristic patterns to detect pornographic domains before querying the full FST database. This two-layer approach dramatically reduces file size and improves performance:
+K2Rule uses intelligent heuristic patterns to detect pornographic domains before querying the K2RULEV3 sorted domain database. This two-layer approach dramatically reduces file size and improves performance:
 
-- **Layer 1: Heuristic Detection** - Fast pattern matching (covers 48.9% of domains)
-- **Layer 2: FST Lookup** - Binary search in compressed database (covers remaining 51.1%)
+- **Layer 1: Heuristic Detection** — Fast pattern matching (covers ~47% of domains)
+- **Layer 2: K2RULEV3 Sorted Domain Lookup** — Binary search in sorted domain database (covers remaining ~53%)
 
 ## Performance Impact
 
 | Metric | Without Heuristic | With Heuristic | Improvement |
 |--------|-------------------|----------------|-------------|
-| **Total Domains** | 707,915 | 707,915 | - |
-| **Heuristic Coverage** | 0 (0%) | 346,426 (48.9%) | +48.9% |
-| **FST Storage** | 707,915 | 361,489 | -49% |
-| **File Size (compressed)** | 4.9 MB | 2.6 MB | **-47%** |
-| **Detection Speed** | FST only | Heuristic + FST | **~2x faster** |
+| **Total Domains** | ~717K | ~717K | - |
+| **Heuristic Coverage** | 0 (0%) | ~338K (~47%) | +47% |
+| **K2RULEV3 Storage** | ~717K | ~380K | -47% |
+| **File Size (compressed)** | ~5.8 MB | ~3.1 MB | **-47%** |
+| **Detection Speed** | K2RULEV3 only | Heuristic + K2RULEV3 | **~2x faster** |
 
 ## Detection Layers
 
@@ -27,17 +27,17 @@ The heuristic engine uses 8 detection layers, checked in priority order:
 
 Excludes legitimate domains containing porn-related keywords:
 
-```rust
+```
 // UK regions: essex, middlesex, sussex, wessex
-essex.ac.uk ❌
-middlesex.edu ❌
+essex.ac.uk        -> not porn
+middlesex.edu      -> not porn
 
 // Adult education
-adulteducation.gov ❌
-adultlearning.org ❌
+adulteducation.gov -> not porn
+adultlearning.org  -> not porn
 
 // Technology
-macosx.apple.com ❌
+macosx.apple.com   -> not porn
 ```
 
 ### 2. Strong Keywords
@@ -51,9 +51,9 @@ chaturbate, onlyfans, livejasmin, bongacams, stripchat
 ```
 
 **Examples:**
-- `pornhub.com` ✓
-- `xvideos.net` ✓
-- `chaturbate.tv` ✓
+- `pornhub.com` -> detected
+- `xvideos.net` -> detected
+- `chaturbate.tv` -> detected
 
 ### 3. Special Regex Pattern: 3x Prefix
 
@@ -64,9 +64,9 @@ Matches domains starting with "3x":
 ```
 
 **Examples:**
-- `3xmovies.com` ✓
-- `3xvideos.net` ✓
-- `some3x.com` ❌ (3x not at start)
+- `3xmovies.com` -> detected
+- `3xvideos.net` -> detected
+- `some3x.com` -> not detected (3x not at start)
 
 ### 4. Porn Terminology
 
@@ -80,11 +80,6 @@ Matches domains starting with "3x":
 **Descriptive:** nude, naked, dirty, sexy, erotic
 **Multi-language:** porno, sexe, jav
 
-**Examples:**
-- `pussy.com` ✓
-- `milf-videos.net` ✓
-- `bdsm.tv` ✓
-
 ### 5. Compound Terms
 
 27 multi-word combinations (safe compounds):
@@ -92,18 +87,12 @@ Matches domains starting with "3x":
 ```
 sexcam, freeporn, livesex, porntube, xxxporn
 sextube, hotsex, sexporn, pornsite, freesex
-bigass, phatass, niceass  ← safe "ass" compounds
+bigass, phatass, niceass  <- safe "ass" compounds
 ```
 
 **Why compounds?**
-- `tube` alone matches `youtube.com` ❌
-- `porntube` only matches porn sites ✓
-
-**Examples:**
-- `sexcam.com` ✓
-- `freeporn.net` ✓
-- `bigass.tv` ✓ (compound form)
-- `class.com` ❌ (ass not in compound)
+- `tube` alone matches `youtube.com` (false positive)
+- `porntube` only matches porn sites
 
 ### 6. Verb+Noun Patterns
 
@@ -113,31 +102,19 @@ bigass, phatass, niceass  ← safe "ass" compounds
 - `free + porn` (1,955 occurrences)
 - `live + sex` (1,787 occurrences)
 - `cam + girl` (1,434 occurrences)
-- `watch + porn` (122 occurrences)
 
 **Matching Modes:**
-
-1. **Direct:** `freeporn.com` ✓
-2. **Separated:** `free-porn.net`, `free_porn.tv` ✓
-3. **Filler:** `freegirlporn.com` ✓ (≤4 chars between words)
-
-**Examples:**
-- `watchporn.com` ✓ (direct)
-- `watch-sex.net` ✓ (separator)
-- `watchgirlsex.tv` ✓ (filler: "girl")
+1. **Direct:** `freeporn.com`
+2. **Separated:** `free-porn.net`, `free_porn.tv`
+3. **Filler:** `freegirlporn.com` (<=4 chars between words)
 
 ### 7. Repetition Patterns
 
 Character and word repetitions:
 
-**Character repetitions:**
-- `xxx` → `xxxvideos.com` ✓
-- `xxxxxx` → `xxxxxx.net` ✓
-
-**Word repetitions:**
-- `sexsex` → `sexsex.com` ✓
-- `camcam` → `camcam.tv` ✓
-- `girlgirl` → `girlgirl.net` ✓
+- `xxx` -> `xxxvideos.com`
+- `sexsex` -> `sexsex.com`
+- `camcam` -> `camcam.tv`
 
 ### 8. Adult TLDs
 
@@ -150,14 +127,9 @@ ICANN-approved adult content domains:
 .sex    (approved 2015)
 ```
 
-**Examples:**
-- `example.xxx` ✓
-- `site.porn` ✓
-- `anything.sex` ✓
-
 ## Coverage Statistics
 
-Based on analysis of **707,915 porn domains**:
+Based on analysis of **~717K porn domains**:
 
 | Detection Layer | Incremental Coverage | Cumulative Coverage |
 |----------------|---------------------|---------------------|
@@ -167,7 +139,7 @@ Based on analysis of **707,915 porn domains**:
 | + Verb+Noun | ~0% | 57% |
 | + Special Patterns | +0.3% | **57.3%** |
 
-**Note:** Actual FST filtering achieves **48.9% coverage** due to optimized deduplication.
+**Note:** Actual filtering achieves **~47% coverage** due to optimized deduplication.
 
 ## False Positive Prevention
 
@@ -179,74 +151,77 @@ Zero false positives achieved through:
    - Legitimate services: adult education, youtube
 
 2. **Compound-Only Matching**
-   - `tube` → only in `porntube`, `sextube`
-   - `ass` → only in `bigass`, `phatass`, `niceass`
+   - `tube` -> only in `porntube`, `sextube`
+   - `ass` -> only in `bigass`, `phatass`, `niceass`
 
 3. **Context-Aware Patterns**
-   - `3x` → only matches `^3x` (prefix)
+   - `3x` -> only matches `^3x` (prefix)
    - Removed: 69 pattern (too many false positives in dates/versions)
 
 ## Usage Example
 
-```rust
-use k2rule::porn_heuristic::is_porn_heuristic;
+```go
+import "github.com/kaitu-io/k2rule/internal/porn"
 
 // Keywords
-assert!(is_porn_heuristic("pornhub.com"));
-assert!(is_porn_heuristic("example.xxx"));
+porn.IsPornHeuristic("pornhub.com")    // true
+porn.IsPornHeuristic("example.xxx")    // true
 
 // Terminology
-assert!(is_porn_heuristic("pussy.com"));
-assert!(is_porn_heuristic("milf-videos.net"));
+porn.IsPornHeuristic("pussy.com")      // true
+porn.IsPornHeuristic("milf-videos.net") // true
 
 // Compounds
-assert!(is_porn_heuristic("freeporn.tv"));
-assert!(is_porn_heuristic("bigass.com"));
+porn.IsPornHeuristic("freeporn.tv")    // true
+porn.IsPornHeuristic("bigass.com")     // true
 
 // Verb+Noun patterns
-assert!(is_porn_heuristic("watch-porn.com"));
-assert!(is_porn_heuristic("freexxxmovies.net"));
+porn.IsPornHeuristic("watch-porn.com") // true
 
 // No false positives
-assert!(!is_porn_heuristic("google.com"));
-assert!(!is_porn_heuristic("class.com"));
-assert!(!is_porn_heuristic("essex.ac.uk"));
+porn.IsPornHeuristic("google.com")     // false
+porn.IsPornHeuristic("class.com")      // false
+porn.IsPornHeuristic("essex.ac.uk")    // false
 ```
 
-## Integration with FST
+## Integration with K2RULEV3
 
 The heuristic works in two contexts:
 
 ### 1. File Generation (Build Time)
 
-Filters domains before writing FST:
+Filters domains before writing K2RULEV3:
 
-```rust
-// In k2rule-gen
-let filtered_domains: Vec<&str> = all_domains
-    .iter()
-    .filter(|domain| !is_porn_heuristic(domain))
-    .copied()
-    .collect();
-
-build_porn_fst(&filtered_domains)?;
+```go
+// In cmd/k2rule-gen generate-porn
+var stored []string
+for _, domain := range allDomains {
+    if !porn.IsPornHeuristic(domain) {
+        stored = append(stored, domain)
+    }
+}
+// Write stored domains to K2RULEV3 with target=Reject
 ```
 
-**Result:** 4.9 MB → 2.6 MB (-47% size reduction)
+**Result:** ~5.8 MB -> ~3.1 MB (-47% size reduction)
 
 ### 2. Runtime Detection
 
-First-pass filter before FST lookup:
+First-pass filter before K2RULEV3 lookup:
 
-```rust
-pub fn is_porn(&mut self, domain: &str) -> bool {
+```go
+func (c *PornChecker) IsPorn(domain string) bool {
     // Fast heuristic check (no file I/O)
-    if is_porn_heuristic(domain) {
-        return true;
+    if porn.IsPornHeuristic(domain) {
+        return true
     }
-
-    // FST lookup for remaining domains
-    self.check_fst(domain)
+    // K2RULEV3 sorted domain lookup for remaining domains
+    if c.reader != nil {
+        if target := c.reader.MatchDomain(domain); target != nil {
+            return *target == 2 // targetReject
+        }
+    }
+    return false
 }
 ```
 
@@ -256,45 +231,45 @@ pub fn is_porn(&mut self, domain: &str) -> bool {
 
 ### Adding New Keywords
 
-```rust
-const PORN_KEYWORDS: &[&str] = &[
+Edit `internal/porn/data.go`:
+
+```go
+var strongKeywords = []string{
     "porn",
     "xvideos",
     "yournewkeyword",  // Add here
-];
+}
 ```
 
 ### Adding Compound Terms
 
-```rust
-const PORN_COMPOUNDS: &[&str] = &[
+```go
+var compoundTerms = []string{
     "sexcam",
     "freeporn",
     "yournewcompound",  // Add here
-];
+}
 ```
 
 ### Testing
 
-All changes must pass the test suite:
-
 ```bash
-cargo test --lib porn_heuristic
+go test ./internal/porn/...
 ```
 
 ## Performance Considerations
 
-- **Regex compilation:** All patterns compiled once at startup (lazy static)
+- **Pattern compilation:** All patterns compiled once at init
 - **Memory overhead:** ~100 KB for all patterns
-- **Runtime overhead:** <10% compared to FST-only approach
-- **File size benefit:** 47% reduction (4.9 MB → 2.6 MB)
+- **Runtime overhead:** <10% compared to K2RULEV3-only approach
+- **File size benefit:** ~47% reduction
 
 ## Related Documentation
 
-- [中文文档](./porn-heuristic-detection-zh.md) - Chinese version
-- [Implementation](../src/porn_heuristic.rs) - Source code
-- [README](../README.md) - Project overview
+- [中文文档](./porn-heuristic-detection-zh.md) — Chinese version
+- [Implementation](../internal/porn/heuristic.go) — Source code
+- [README](../README.md) — Project overview
 
 ---
 
-**Powered by [Kaitu.io](https://kaitu.io) - Advanced Rule Engine for Rust**
+**Powered by [Kaitu.io](https://kaitu.io) — High-Performance Rule Engine for Go**

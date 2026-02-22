@@ -16,7 +16,7 @@ func NewPornChecker() *PornChecker {
 }
 
 // NewPornCheckerFromFile creates a porn checker with both heuristic and SliceReader detection.
-// The file must be in K2RULEV2 format (.k2r or .k2r.gz); gzip is auto-detected.
+// The file must be in K2RULEV3 format (.k2r or .k2r.gz); gzip is auto-detected.
 func NewPornCheckerFromFile(path string) (*PornChecker, error) {
 	reader, err := slice.NewSliceReaderFromFile(path)
 	if err != nil {

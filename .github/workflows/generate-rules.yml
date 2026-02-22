@@ -55,9 +55,9 @@ jobs:
             Automatically generated rule binaries for ${{ steps.tag.outputs.date }}
 
             ## Files
-            - `cn_blacklist.k2r.gz` - Blacklist mode (K2RULEV2 format)
-            - `cn_whitelist.k2r.gz` - Whitelist mode (K2RULEV2 format)
-            - `porn_domains.k2r.gz` - Porn domain blocklist (K2RULEV2 format)
+            - `cn_blacklist.k2r.gz` - Blacklist mode (K2RULEV3 format)
+            - `cn_whitelist.k2r.gz` - Whitelist mode (K2RULEV3 format)
+            - `porn_domains.k2r.gz` - Porn domain blocklist (K2RULEV3 format)
           files: output/*.k2r.gz
           draft: false
           prerelease: false
