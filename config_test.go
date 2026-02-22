@@ -1,8 +1,6 @@
 package k2rule
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -16,13 +14,15 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config with RuleURL",
 			config: &Config{
-				RuleURL: "https://example.com/rules.k2r.gz",
+				CacheDir: "/tmp/test",
+				RuleURL:  "https://example.com/rules.k2r.gz",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid config with RuleFile",
 			config: &Config{
+				CacheDir: "/tmp/test",
 				RuleFile: "./rules/test.k2r.gz",
 			},
 			wantErr: false,
@@ -30,6 +30,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config with both empty (pure global mode)",
 			config: &Config{
+				CacheDir:     "/tmp/test",
 				IsGlobal:     true,
 				GlobalTarget: TargetProxy,
 			},
@@ -38,6 +39,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid: both RuleURL and RuleFile set",
 			config: &Config{
+				CacheDir: "/tmp/test",
 				RuleURL:  "https://example.com/rules.k2r.gz",
 				RuleFile: "./rules/test.k2r.gz",
 			},
@@ -47,6 +49,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid: both GeoIPURL and GeoIPFile set",
 			config: &Config{
+				CacheDir:  "/tmp/test",
 				GeoIPURL:  "https://example.com/geoip.mmdb.gz",
 				GeoIPFile: "./geoip/test.mmdb",
 			},
@@ -56,6 +59,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid: both PornURL and PornFile set",
 			config: &Config{
+				CacheDir: "/tmp/test",
 				PornURL:  "https://example.com/porn.fst.gz",
 				PornFile: "./porn/test.fst.gz",
 			},
@@ -130,13 +134,11 @@ func TestConfig_SetDefaults(t *testing.T) {
 			},
 		},
 		{
-			name:   "sets default CacheDir",
+			name:   "CacheDir stays empty after SetDefaults",
 			config: &Config{},
 			check: func(t *testing.T, c *Config) {
-				homeDir, _ := os.UserHomeDir()
-				expectedDir := filepath.Join(homeDir, ".cache", "k2rule")
-				if c.CacheDir != expectedDir {
-					t.Errorf("CacheDir = %v, want %v", c.CacheDir, expectedDir)
+				if c.CacheDir != "" {
+					t.Errorf("CacheDir = %v, want empty string", c.CacheDir)
 				}
 			},
 		},
