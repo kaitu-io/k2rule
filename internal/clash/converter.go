@@ -97,14 +97,18 @@ func NewSliceConverter() *SliceConverter {
 	}
 }
 
-// SetProviderRules sets provider rules directly (for testing or preloaded providers).
-// This overrides any rules loaded via LoadProvider for the same name.
+// SetProviderRules sets provider rules directly by name.
+// Intended for CLI use and testing: callers can preload external provider rules
+// before calling Convert, bypassing the need to download them.
+// Any rules set here override rules loaded via LoadProvider for the same name.
 func (c *SliceConverter) SetProviderRules(name string, rules []string) {
 	c.providerRules[name] = rules
 }
 
-// LoadProvider loads provider rules from content string.
-// Supports both YAML "payload:" format and plain text (one rule per line).
+// LoadProvider loads provider rules from a content string into the named provider slot.
+// Intended for CLI use: callers fetch provider content (e.g. via HTTP) and pass it here
+// before calling Convert.
+// Supports both YAML "payload:" list format and plain text (one rule per line).
 func (c *SliceConverter) LoadProvider(name, content string) error {
 	// Try YAML payload format first
 	type payloadDoc struct {
