@@ -446,8 +446,8 @@ let fst = Set::new(fst_data.to_vec())?;
 **Go Implementation:**
 
 ```go
-// Load entire file into memory (one allocation)
-data, _ := os.ReadFile("rules.k2r.gz")
+// Memory-mapped file (zero-copy from disk, cross-platform via mmap-go)
+reader, _ := slice.NewMmapReader("rules.k2r")
 
 // Zero-copy slice views (no additional allocations)
 fstData := r.data[offset : offset+size]
@@ -494,25 +494,35 @@ FST exploits:
 - **Suffix sharing**: Reversed domains share TLD suffixes (.com, .net)
 - **Deterministic structure**: No hash collisions, predictable memory
 
-#### Memory-Mapped Files (Rust)
+#### Memory-Mapped Files
 
-For large datasets, Rust supports memory-mapped I/O:
+Both Rust and Go use memory-mapped I/O for zero-copy file access:
+
+**Rust** (via `memmap2`):
 
 ```rust
 use memmap2::Mmap;
 
-// Map file to memory (no upfront loading)
 let file = File::open("rules.k2r.gz")?;
 let mmap = unsafe { Mmap::map(&file)? };
-
-// OS manages paging (only accessed pages in RAM)
 let reader = SliceReader::from_bytes(&mmap)?;
+```
+
+**Go** (via `mmap-go`, cross-platform including Windows):
+
+```go
+import mmap "github.com/edsrzf/mmap-go"
+
+file, _ := os.Open("rules.k2r")
+data, _ := mmap.Map(file, mmap.RDONLY, 0)
+// data is a zero-copy view into the file
 ```
 
 **Benefits:**
 - **Lazy loading**: Only read pages when accessed
 - **Shared memory**: Multiple processes share same physical pages
 - **OS-managed**: Kernel handles paging and eviction
+- **Cross-platform**: Works on Linux, macOS, and Windows (uses `CreateFileMapping` on Windows)
 
 **Tradeoffs:**
 - Slower than in-memory on first access
