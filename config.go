@@ -10,7 +10,7 @@ import (
 // Default behavior (all URLs auto-download from jsDelivr CDN):
 //   - Empty RuleURL  → DefaultRuleURL (cn_blacklist.k2r.gz) unless IsGlobal=true
 //   - Empty GeoIPURL → DefaultGeoIPURL (MaxMind GeoLite2)
-//   - Empty PornURL  → DefaultPornURL (porn_domains.k2r.gz)
+//   - Empty PornURL  → DefaultPornURL (porn_domains.k2r.gz) when Antiporn=true
 //
 // Priority: File paths take precedence over URLs
 type Config struct {
@@ -22,7 +22,8 @@ type Config struct {
 	GeoIPURL  string // Remote GeoIP database URL ("" = use DefaultGeoIPURL)
 	GeoIPFile string // Local .mmdb file path (takes precedence over GeoIPURL)
 
-	// Porn detection (always initialized with defaults)
+	// Porn detection (only initialized when Antiporn=true)
+	Antiporn bool   // Enable anti-porn resource loading (default: false)
 	PornURL  string // Remote porn database URL ("" = use DefaultPornURL)
 	PornFile string // Local .k2r.gz file path (takes precedence over PornURL)
 
@@ -61,7 +62,7 @@ func (c *Config) Validate() error {
 // Note: URL defaults are applied in Init(), not here:
 // - Empty RuleURL  → DefaultRuleURL (unless IsGlobal=true)
 // - Empty GeoIPURL → DefaultGeoIPURL
-// - Empty PornURL  → DefaultPornURL
+// - Empty PornURL  → DefaultPornURL (only when Antiporn=true)
 func (c *Config) SetDefaults() {
 	if c.GlobalTarget == 0 {
 		c.GlobalTarget = TargetProxy // Default global target

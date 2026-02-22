@@ -84,7 +84,7 @@ func Init(config *Config) error {
 		if err := manager.reader.Load(config.RuleFile); err != nil {
 			return fmt.Errorf("failed to load rule file: %w", err)
 		}
-		manager.fallback = Target(manager.reader.Fallback())
+		manager.fallback.Store(uint32(manager.reader.Fallback()))
 		globalManager = manager
 	} else if !config.IsGlobal {
 		// Not in pure global mode, load rules from URL (empty URL uses default)
@@ -116,22 +116,25 @@ func Init(config *Config) error {
 	}
 
 	// Initialize porn detection (Priority: PornFile > PornURL)
-	if config.PornFile != "" {
-		checker, err := NewPornCheckerFromFile(config.PornFile)
-		if err != nil {
-			return fmt.Errorf("failed to load porn file: %w", err)
+	// Only loads resources when Antiporn=true; IsPorn() still works via heuristic fallback
+	if config.Antiporn {
+		if config.PornFile != "" {
+			checker, err := NewPornCheckerFromFile(config.PornFile)
+			if err != nil {
+				return fmt.Errorf("failed to load porn file: %w", err)
+			}
+			if globalMatcher == nil {
+				globalMatcher = &Matcher{}
+			}
+			globalMatcher.pornChecker = checker
+		} else {
+			url := defaultIfEmpty(config.PornURL, DefaultPornURL)
+			pornMgr := NewPornRemoteManager(url, config.CacheDir)
+			if err := pornMgr.Init(); err != nil {
+				return fmt.Errorf("failed to init porn detection: %w", err)
+			}
+			globalPornManager = pornMgr
 		}
-		if globalMatcher == nil {
-			globalMatcher = &Matcher{}
-		}
-		globalMatcher.pornChecker = checker
-	} else {
-		url := defaultIfEmpty(config.PornURL, DefaultPornURL)
-		pornMgr := NewPornRemoteManager(url, config.CacheDir)
-		if err := pornMgr.Init(); err != nil {
-			return fmt.Errorf("failed to init porn detection: %w", err)
-		}
-		globalPornManager = pornMgr
 	}
 
 	return nil
@@ -279,21 +282,21 @@ func Match(input string) Target {
 
 		// Step 1d: Check IP-CIDR rules (if rules loaded)
 		if manager != nil {
-			if target := manager.matchIPCIDR(ip); target != manager.fallback {
+			if target := manager.matchIPCIDR(ip); target != manager.getFallback() {
 				return target
 			}
 
 			// Step 1e: Check GeoIP rules (if GeoIP initialized)
 			if geoIPMgr != nil {
 				if country, err := geoIPMgr.LookupCountry(ip); err == nil {
-					if target := manager.matchGeoIP(country); target != manager.fallback {
+					if target := manager.matchGeoIP(country); target != manager.getFallback() {
 						return target
 					}
 				}
 			}
 
 			// Step 1f: Return fallback
-			return manager.fallback
+			return manager.getFallback()
 		}
 
 		// Fallback to old matcher (if no RemoteRuleManager)
@@ -336,10 +339,10 @@ func Match(input string) Target {
 
 	// Step 2c: Check domain rules (if rules loaded)
 	if manager != nil {
-		if target := manager.matchDomain(input); target != manager.fallback {
+		if target := manager.matchDomain(input); target != manager.getFallback() {
 			return target
 		}
-		return manager.fallback
+		return manager.getFallback()
 	}
 
 	// Fallback to old matcher (if no RemoteRuleManager)
@@ -472,23 +475,23 @@ func matchStaticRules(input string) Target {
 	}
 
 	if ip := net.ParseIP(input); ip != nil {
-		if target := manager.matchIPCIDR(ip); target != manager.fallback {
+		if target := manager.matchIPCIDR(ip); target != manager.getFallback() {
 			return target
 		}
 		if geoIPMgr != nil {
 			if country, err := geoIPMgr.LookupCountry(ip); err == nil {
-				if target := manager.matchGeoIP(country); target != manager.fallback {
+				if target := manager.matchGeoIP(country); target != manager.getFallback() {
 					return target
 				}
 			}
 		}
-		return manager.fallback
+		return manager.getFallback()
 	}
 
-	if target := manager.matchDomain(input); target != manager.fallback {
+	if target := manager.matchDomain(input); target != manager.getFallback() {
 		return target
 	}
-	return manager.fallback
+	return manager.getFallback()
 }
 
 // Helper functions

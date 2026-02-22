@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kaitu-io/k2rule/internal/slice"
@@ -24,7 +25,7 @@ type RemoteRuleManager struct {
 	url         string                    // Rule file URL
 	cacheDir    string                    // Cache directory (~/.cache/k2rule)
 	reader      *slice.CachedMmapReader   // Hot-reload capable reader
-	fallback    Target                    // Default fallback target
+	fallback    atomic.Uint32             // Default fallback target (stored as uint32 for atomics)
 
 	// Update metadata
 	mu          sync.RWMutex
@@ -35,13 +36,14 @@ type RemoteRuleManager struct {
 
 // NewRemoteRuleManager creates a new remote rule manager
 func NewRemoteRuleManager(url, cacheDir string, fallback Target) *RemoteRuleManager {
-	return &RemoteRuleManager{
+	m := &RemoteRuleManager{
 		url:      url,
 		cacheDir: cacheDir,
-		fallback: fallback,
 		reader:   slice.NewCachedMmapReader(),
 		stopCh:   make(chan struct{}),
 	}
+	m.fallback.Store(uint32(fallback))
+	return m
 }
 
 // Init initializes the manager: checks cache → downloads if needed → starts auto-update
@@ -58,7 +60,7 @@ func (m *RemoteRuleManager) Init() error {
 		if err := m.reader.Load(cachedPath); err == nil {
 			slog.Info("rules loaded from cache")
 			// Sync fallback from loaded file
-			m.fallback = Target(m.reader.Fallback())
+			m.fallback.Store(uint32(m.reader.Fallback()))
 			// Successfully loaded from cache, start background update check
 			go m.startAutoUpdate()
 			return nil
@@ -149,7 +151,7 @@ func (m *RemoteRuleManager) downloadAndLoad(useETag bool) error {
 	}
 
 	// Sync fallback from loaded file
-	m.fallback = Target(m.reader.Fallback())
+	m.fallback.Store(uint32(m.reader.Fallback()))
 
 	// Update metadata
 	m.mu.Lock()
@@ -208,11 +210,16 @@ func (m *RemoteRuleManager) GetGeneration() uint64 {
 
 // Internal matching methods (delegate to reader)
 
+// getFallback returns the fallback target (atomic, safe for concurrent access)
+func (m *RemoteRuleManager) getFallback() Target {
+	return Target(m.fallback.Load())
+}
+
 // matchDomain matches a domain (internal use only)
 func (m *RemoteRuleManager) matchDomain(domain string) Target {
 	target := m.reader.MatchDomain(domain)
 	if target == nil {
-		return m.fallback
+		return m.getFallback()
 	}
 	return Target(*target)
 }
@@ -221,7 +228,7 @@ func (m *RemoteRuleManager) matchDomain(domain string) Target {
 func (m *RemoteRuleManager) matchIPCIDR(ip net.IP) Target {
 	target := m.reader.MatchIP(ip)
 	if target == nil {
-		return m.fallback
+		return m.getFallback()
 	}
 	return Target(*target)
 }
@@ -230,14 +237,14 @@ func (m *RemoteRuleManager) matchIPCIDR(ip net.IP) Target {
 func (m *RemoteRuleManager) matchGeoIP(country string) Target {
 	target := m.reader.MatchGeoIP(country)
 	if target == nil {
-		return m.fallback
+		return m.getFallback()
 	}
 	return Target(*target)
 }
 
 // Fallback returns the fallback target
 func (m *RemoteRuleManager) Fallback() Target {
-	return m.fallback
+	return m.getFallback()
 }
 
 // Close closes the manager and reader
