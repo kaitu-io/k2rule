@@ -23,7 +23,9 @@ const (
 type SliceType uint8
 
 const (
-	// SliceTypeFstDomain is FST-based domain set
+	// SliceTypeSortedDomain is sorted domain set (Go-native sorted binary format)
+	SliceTypeSortedDomain SliceType = 0x01
+	// SliceTypeFstDomain is FST-based domain set (kept for compatibility)
 	SliceTypeFstDomain SliceType = 0x01
 	// SliceTypeCidrV4 is IPv4 CIDR ranges
 	SliceTypeCidrV4 SliceType = 0x02
