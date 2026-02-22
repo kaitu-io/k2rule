@@ -27,7 +27,7 @@ type Config struct {
 	PornFile string // Local .fst.gz file path (takes precedence over PornURL)
 
 	// Shared settings
-	CacheDir string // Cache directory ("" = default ~/.cache/k2rule/)
+	CacheDir string // Cache directory (REQUIRED: caller must provide a writable path)
 
 	// Global proxy mode
 	IsGlobal     bool   // true = global proxy mode, false = rule-based mode
@@ -57,7 +57,6 @@ func (c *Config) Validate() error {
 
 // SetDefaults fills in default values for unset fields.
 // - GlobalTarget defaults to TargetProxy
-// - CacheDir defaults to ~/.cache/k2rule/
 //
 // Note: URL defaults are applied in Init(), not here:
 // - Empty RuleURL  → DefaultRuleURL (unless IsGlobal=true)
