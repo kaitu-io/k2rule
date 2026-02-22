@@ -208,9 +208,12 @@ func (m *GeoIPManager) loadDatabase(path string) error {
 	m.reader = reader
 	m.mu.Unlock()
 
-	// Close old reader after swap
+	// Grace period: concurrent LookupCountry() calls may still hold the old reader pointer
 	if oldReader != nil {
-		oldReader.Close()
+		go func() {
+			time.Sleep(5 * time.Second)
+			oldReader.Close()
+		}()
 	}
 
 	return nil
