@@ -31,38 +31,8 @@ jobs:
         run: |
           go run ./cmd/k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rule-binaries
-          path: output/*.k2r.gz
-          retention-days: 30
-
-      - name: Create release tag
-        id: tag
-        run: |
-          TAG="rules-$(date +'%Y%m%d')"
-          DATE="$(date +'%Y-%m-%d')"
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "date=${DATE}" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Rules ${{ steps.tag.outputs.date }}
-          body: |
-            Automatically generated rule binaries for ${{ steps.tag.outputs.date }}
-
-            ## Files
-            - `cn_blacklist.k2r.gz` - Blacklist mode (K2RULEV3 format)
-            - `cn_whitelist.k2r.gz` - Whitelist mode (K2RULEV3 format)
-            - `porn_domains.k2r.gz` - Porn domain blocklist (K2RULEV3 format)
-          files: output/*.k2r.gz
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Show generated files
+        run: ls -lh output/*.k2r.gz
 
       - name: Deploy to release branch
         run: |
@@ -74,3 +44,18 @@ jobs:
           git add *.k2r.gz
           git commit -m "Update rules $(date +'%Y-%m-%d')"
           git push origin HEAD:release --force
+
+      - name: Wait for jsDelivr metadata cache
+        run: |
+          echo "Waiting 10 minutes for jsDelivr internal cache to refresh..."
+          sleep 600
+
+      - name: Purge jsDelivr cache
+        run: |
+          for file in output/*.k2r.gz; do
+            name=$(basename "$file")
+            echo -n "Purging ${name}... "
+            response=$(curl -s -w "%{http_code}" "https://purge.jsdelivr.net/gh/kaitu-io/k2rule@release/${name}")
+            echo "HTTP ${response: -3}"
+            sleep 2
+          done
