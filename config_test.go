@@ -84,6 +84,25 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestConfig_Validate_EmptyCacheDir(t *testing.T) {
+	config := &Config{CacheDir: ""}
+	err := config.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty CacheDir")
+	}
+	if err.Error() != "CacheDir is required" {
+		t.Errorf("got %q, want %q", err.Error(), "CacheDir is required")
+	}
+}
+
+func TestConfig_SetDefaults_NoCacheDirAutoFill(t *testing.T) {
+	config := &Config{}
+	config.SetDefaults()
+	if config.CacheDir != "" {
+		t.Errorf("SetDefaults() should not auto-fill CacheDir, got %q", config.CacheDir)
+	}
+}
+
 func TestConfig_SetDefaults(t *testing.T) {
 	tests := []struct {
 		name   string
