@@ -9,8 +9,8 @@ import (
 
 // Constants for the K2Rule slice format
 const (
-	// Magic bytes for K2Rule v2 slice-based format
-	Magic = "K2RULEV2"
+	// Magic bytes for K2Rule v3 slice-based format
+	Magic = "K2RULEV3"
 	// FormatVersion is the current format version
 	FormatVersion = 1
 	// HeaderSize is the size of SliceHeader in bytes
@@ -23,8 +23,8 @@ const (
 type SliceType uint8
 
 const (
-	// SliceTypeFstDomain is FST-based domain set
-	SliceTypeFstDomain SliceType = 0x01
+	// SliceTypeSortedDomain is sorted domain set (Go-native sorted binary format)
+	SliceTypeSortedDomain SliceType = 0x01
 	// SliceTypeCidrV4 is IPv4 CIDR ranges
 	SliceTypeCidrV4 SliceType = 0x02
 	// SliceTypeCidrV6 is IPv6 CIDR ranges
@@ -40,8 +40,8 @@ const (
 // String returns the string representation of SliceType
 func (t SliceType) String() string {
 	switch t {
-	case SliceTypeFstDomain:
-		return "FstDomain"
+	case SliceTypeSortedDomain:
+		return "SortedDomain"
 	case SliceTypeCidrV4:
 		return "CidrV4"
 	case SliceTypeCidrV6:
@@ -59,7 +59,7 @@ func (t SliceType) String() string {
 
 // SliceHeader represents the file header (64 bytes)
 type SliceHeader struct {
-	Magic          [8]byte  // "K2RULEV2"
+	Magic          [8]byte  // "K2RULEV3"
 	Version        uint32   // Format version
 	SliceCount     uint32   // Number of slices
 	FallbackTarget uint8    // Fallback target when no rule matches
