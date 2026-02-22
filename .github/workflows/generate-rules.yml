@@ -2,67 +2,49 @@ name: Generate Rules
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
   schedule:
-    # Run daily at 7:00 AM Beijing time (23:00 UTC previous day)
-    - cron: '0 23 * * *'
+    - cron: '0 23 * * *'  # Daily at 7:00 AM Beijing time
   workflow_dispatch:
-    # Allow manual trigger
-
-env:
-  CARGO_TERM_COLOR: always
 
 jobs:
   generate:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          go-version: '1.21'
 
-      - name: Build release
-        run: cargo build --release
+      - name: Run tests
+        run: go test ./...
 
       - name: Generate rules
         run: |
           mkdir -p output
-          ./target/release/k2rule-gen generate-all -o output/ -v
+          go run ./cmd/k2rule-gen generate-all -o output/ -v
 
-      - name: Generate porn domain list (FST format)
+      - name: Generate porn domain list
         run: |
-          ./target/release/k2rule-gen generate-porn-fst -o output/porn_domains.fst.gz -v
+          go run ./cmd/k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rule-binaries
-          path: |
-            output/*.k2r.gz
-            output/*.fst.gz
+          path: output/*.k2r.gz
           retention-days: 30
 
       - name: Create release tag
         id: tag
         run: |
-          echo "tag=rules-$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
-          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          TAG="rules-$(date +'%Y%m%d')"
+          DATE="$(date +'%Y-%m-%d')"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -73,12 +55,10 @@ jobs:
             Automatically generated rule binaries for ${{ steps.tag.outputs.date }}
 
             ## Files
-            - `cn_blacklist.k2r.gz` - Blacklist mode (gzip compressed, specific sites use proxy, fallback to direct)
-            - `cn_whitelist.k2r.gz` - Whitelist mode (gzip compressed, most traffic direct, GFW blocked sites use proxy)
-            - `porn_domains.fst.gz` - Porn domain blocklist (FST format, ~5MB, synced from Bon-Appetit/porn-domains)
-          files: |
-            output/*.k2r.gz
-            output/*.fst.gz
+            - `cn_blacklist.k2r.gz` - Blacklist mode (K2RULEV2 format)
+            - `cn_whitelist.k2r.gz` - Whitelist mode (K2RULEV2 format)
+            - `porn_domains.k2r.gz` - Porn domain blocklist (K2RULEV2 format)
+          files: output/*.k2r.gz
           draft: false
           prerelease: false
         env:
@@ -88,58 +68,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Create orphan release branch or checkout existing
           git checkout --orphan release-temp
-
-          # Remove all files except output
           git rm -rf .
-
-          # Copy generated files to root
           cp output/*.k2r.gz .
-          cp output/*.fst.gz .
-
-          # Commit and force push
-          git add *.k2r.gz *.fst.gz
+          git add *.k2r.gz
           git commit -m "Update rules $(date +'%Y-%m-%d')"
           git push origin HEAD:release --force
-
-  build-and-test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Run tests
-        run: cargo test --release
-
-      - name: Upload binary (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: k2rule-gen-linux
-          path: target/release/k2rule-gen
-
-      - name: Upload binary (macOS)
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: k2rule-gen-macos
-          path: target/release/k2rule-gen
-
-      - name: Upload binary (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: k2rule-gen-windows
-          path: target/release/k2rule-gen.exe
