@@ -72,3 +72,10 @@ func TestNewPornRemoteManager_CustomCacheDir(t *testing.T) {
 		t.Errorf("Expected custom cache dir %s, got %s", customDir, manager.cacheDir)
 	}
 }
+
+func TestNewPornRemoteManager_NoCacheDirFallback(t *testing.T) {
+	manager := NewPornRemoteManager("", "")
+	if manager.cacheDir != "" {
+		t.Errorf("expected empty cacheDir, got %q", manager.cacheDir)
+	}
+}
