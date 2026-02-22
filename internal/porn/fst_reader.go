@@ -1,24 +1,21 @@
-package slice
+package porn
 
 import (
 	"encoding/binary"
 	"fmt"
 )
 
-// FSTReader is a lightweight FST (Finite State Transducer) reader
-// compatible with Rust's fst crate binary format
-type FSTReader struct {
+// pornFSTReader is a lightweight FST (Finite State Transducer) reader
+// compatible with Rust's fst crate binary format, used for porn domain lookup.
+type pornFSTReader struct {
 	data []byte
 }
 
-// FST format constants
-const (
-	// Version 3 of the fst crate format
-	fstVersion = 3
-)
+// fstVersion is the supported FST version (version 3 of the fst crate format)
+const fstVersion = 3
 
-// NewFSTReader creates a new FST reader from bytes
-func NewFSTReader(data []byte) (*FSTReader, error) {
+// newPornFSTReader creates a new FST reader from bytes
+func newPornFSTReader(data []byte) (*pornFSTReader, error) {
 	if len(data) < 36 {
 		return nil, fmt.Errorf("FST data too small: %d bytes", len(data))
 	}
@@ -38,27 +35,20 @@ func NewFSTReader(data []byte) (*FSTReader, error) {
 		return nil, fmt.Errorf("unsupported FST version: %d (expected %d)", version, fstVersion)
 	}
 
-	return &FSTReader{
+	return &pornFSTReader{
 		data: data,
 	}, nil
 }
 
-// Contains checks if the FST contains the exact key
-func (f *FSTReader) Contains(key []byte) bool {
+// contains checks if the FST contains the exact key
+func (f *pornFSTReader) contains(key []byte) bool {
 	_, found := f.get(key)
 	return found
 }
 
-// HasPrefix checks if the FST has any key with the given prefix
-func (f *FSTReader) HasPrefix(prefix []byte) bool {
-	// For our use case (domain matching), we just need Contains
-	// HasPrefix would require more complex FST traversal
-	return f.Contains(prefix)
-}
-
 // get looks up a key in the FST
 // Returns (value, found)
-func (f *FSTReader) get(key []byte) (uint64, bool) {
+func (f *pornFSTReader) get(key []byte) (uint64, bool) {
 	if len(f.data) < 36 {
 		return 0, false
 	}
@@ -107,32 +97,32 @@ func (f *FSTReader) get(key []byte) (uint64, bool) {
 	return output, true
 }
 
-// fstNode represents a node in the FST
-type fstNode struct {
+// pornFSTNode represents a node in the FST
+type pornFSTNode struct {
 	isFinal     bool
 	finalOutput uint64
-	transitions []fstTransition
+	transitions []pornFSTTransition
 }
 
-// fstTransition represents a transition in the FST
-type fstTransition struct {
+// pornFSTTransition represents a transition in the FST
+type pornFSTTransition struct {
 	inp  byte   // input byte
 	out  uint64 // output value
 	addr uint64 // target address
 }
 
 // findTransition finds a transition for the given input byte
-func (n *fstNode) findTransition(b byte) (fstTransition, bool) {
+func (n *pornFSTNode) findTransition(b byte) (pornFSTTransition, bool) {
 	for _, trans := range n.transitions {
 		if trans.inp == b {
 			return trans, true
 		}
 	}
-	return fstTransition{}, false
+	return pornFSTTransition{}, false
 }
 
 // readNode reads a node at the given address
-func (f *FSTReader) readNode(addr uint64) (*fstNode, error) {
+func (f *pornFSTReader) readNode(addr uint64) (*pornFSTNode, error) {
 	if addr >= uint64(len(f.data)) {
 		return nil, fmt.Errorf("invalid node address: %d", addr)
 	}
@@ -146,7 +136,7 @@ func (f *FSTReader) readNode(addr uint64) (*fstNode, error) {
 	header := f.data[pos]
 	pos++
 
-	node := &fstNode{}
+	node := &pornFSTNode{}
 
 	// Parse node type and flags from header
 	// Bit 0-6: number of transitions
@@ -162,7 +152,7 @@ func (f *FSTReader) readNode(addr uint64) (*fstNode, error) {
 	}
 
 	// Read transitions
-	node.transitions = make([]fstTransition, numTrans)
+	node.transitions = make([]pornFSTTransition, numTrans)
 	for i := 0; i < numTrans; i++ {
 		if pos >= len(f.data) {
 			return nil, fmt.Errorf("unexpected end of data reading transition %d", i)
@@ -183,7 +173,7 @@ func (f *FSTReader) readNode(addr uint64) (*fstNode, error) {
 		// Calculate absolute address (addresses are stored as deltas from current position)
 		targetAddr := addr - addrDelta
 
-		node.transitions[i] = fstTransition{
+		node.transitions[i] = pornFSTTransition{
 			inp:  inp,
 			out:  out,
 			addr: targetAddr,
@@ -195,7 +185,7 @@ func (f *FSTReader) readNode(addr uint64) (*fstNode, error) {
 
 // readPackedU64 reads a packed u64 value (varint encoding)
 // Returns (value, bytes_read)
-func (f *FSTReader) readPackedU64(pos int) (uint64, int) {
+func (f *pornFSTReader) readPackedU64(pos int) (uint64, int) {
 	var val uint64
 	var shift uint
 	bytesRead := 0
