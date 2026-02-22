@@ -3,11 +3,13 @@ package slice
 import (
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	mmap "github.com/edsrzf/mmap-go"
@@ -233,34 +235,66 @@ func (r *MmapReader) MatchGeoIP(country string) *uint8 {
 	return nil
 }
 
-// matchDomainInSlice matches a domain within a single FST domain slice (zero-copy)
+// matchDomainInSlice matches a domain within a single sorted domain slice using binary search (zero-copy).
+// The slice data layout:
+//
+//	count      (4 bytes LE)   number of domains
+//	offsets[0] (4 bytes LE)   byte offset into strings area
+//	...
+//	offsets[count-1]
+//	sentinel   (4 bytes LE)   total strings length
+//	strings area (variable)   reversed, lowercased, dot-prefixed domains sorted lexicographically
 func (r *MmapReader) matchDomainInSlice(entry *SliceEntry, domain string) bool {
-	// Zero-copy: get FST data as a slice view
-	fstData := r.getSliceData(entry)
-	if fstData == nil {
+	// Zero-copy: get domain slice data as a view into the mmap region
+	sliceData := r.getSliceData(entry)
+	if sliceData == nil || len(sliceData) < 4 {
 		return false
 	}
 
-	// Create FST from mmap data (no additional copy)
-	fst, err := NewFSTReader(fstData)
-	if err != nil {
+	// Read count (4 bytes LE)
+	count := int(binary.LittleEndian.Uint32(sliceData[0:4]))
+	if count == 0 {
 		return false
 	}
 
-	// Try exact match (reversed with dot prefix)
-	withDot := "." + domain
-	reversed := reverseString(withDot)
-	if fst.Contains([]byte(reversed)) {
-		return true
+	// Validate we have enough data for the offsets array + sentinel
+	// offsets region: (count+1) * 4 bytes, starting at byte 4
+	offsetsEnd := 4 + (count+1)*4
+	if len(sliceData) < offsetsEnd {
+		return false
 	}
 
-	// Check parent domains for suffix match
+	// strings area starts right after offsets+sentinel
+	stringsStart := offsetsEnd
+
+	// getDomainAt returns the domain string at index i from the sorted strings area (zero-copy view)
+	getDomainAt := func(i int) string {
+		off := int(binary.LittleEndian.Uint32(sliceData[4+i*4 : 4+i*4+4]))
+		nextOff := int(binary.LittleEndian.Uint32(sliceData[4+(i+1)*4 : 4+(i+1)*4+4]))
+		if stringsStart+nextOff > len(sliceData) || off > nextOff {
+			return ""
+		}
+		return string(sliceData[stringsStart+off : stringsStart+nextOff])
+	}
+
+	// Generate reversed suffixes to search for.
+	// For domain "www.youtube.com" we search:
+	//   reverseString(".www.youtube.com") = "moc.ebutuoy.www."
+	//   reverseString(".youtube.com")     = "moc.ebutuoy."
+	//   reverseString(".com")             = "moc."
 	parts := strings.Split(domain, ".")
-	for i := 1; i < len(parts); i++ {
+	for i := 0; i < len(parts); i++ {
 		suffix := strings.Join(parts[i:], ".")
-		suffixWithDot := "." + suffix
-		reversedSuffix := reverseString(suffixWithDot)
-		if fst.Contains([]byte(reversedSuffix)) {
+		if suffix == "" {
+			continue
+		}
+		target := reverseString("." + suffix)
+
+		// Binary search for exact match of target in sorted strings area
+		idx := sort.Search(count, func(j int) bool {
+			return getDomainAt(j) >= target
+		})
+		if idx < count && getDomainAt(idx) == target {
 			return true
 		}
 	}

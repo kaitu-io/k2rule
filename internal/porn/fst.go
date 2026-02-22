@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/kaitu-io/k2rule/internal/slice"
 )
 
 // FST constants
@@ -24,7 +22,7 @@ const (
 
 // FSTChecker is an FST-based porn domain checker
 type FSTChecker struct {
-	fst         *slice.FSTReader
+	fst         *pornFSTReader
 	domainCount uint32
 	version     uint32
 }
@@ -48,7 +46,7 @@ func NewFSTCheckerFromBytes(data []byte) (*FSTChecker, error) {
 
 	// Load FST
 	fstData := data[FSTHeaderSize:]
-	fst, err := slice.NewFSTReader(fstData)
+	fst, err := newPornFSTReader(fstData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load FST: %w", err)
 	}
@@ -105,14 +103,14 @@ func (c *FSTChecker) IsPorn(domain string) bool {
 
 	// Try exact match first (reversed)
 	reversed := reverseString(normalized)
-	if c.fst.Contains([]byte(reversed)) {
+	if c.fst.contains([]byte(reversed)) {
 		return true
 	}
 
 	// Try suffix match with dot prefix
 	withDot := "." + normalized
 	reversedWithDot := reverseString(withDot)
-	if c.fst.Contains([]byte(reversedWithDot)) {
+	if c.fst.contains([]byte(reversedWithDot)) {
 		return true
 	}
 
@@ -122,7 +120,7 @@ func (c *FSTChecker) IsPorn(domain string) bool {
 		suffix := strings.Join(parts[i:], ".")
 		suffixWithDot := "." + suffix
 		reversedSuffix := reverseString(suffixWithDot)
-		if c.fst.Contains([]byte(reversedSuffix)) {
+		if c.fst.contains([]byte(reversedSuffix)) {
 			return true
 		}
 	}
@@ -140,7 +138,7 @@ func (c *FSTChecker) Version() uint32 {
 	return c.version
 }
 
-// reverseString reverses a string
+// reverseString reverses a string character by character
 func reverseString(s string) string {
 	runes := []rune(s)
 	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
