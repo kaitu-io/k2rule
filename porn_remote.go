@@ -59,11 +59,11 @@ func (m *PornRemoteManager) Init() error {
 		// Cache corrupted, will re-download
 	}
 
-	// 2. Cache doesn't exist or is corrupted, force download
-	retryForever(func() error { return m.downloadAndLoad(false) })
-
-	// 3. Start auto-update
-	go m.startAutoUpdate()
+	// 2. Cache doesn't exist or is corrupted, download in background (non-blocking)
+	go func() {
+		retryForever(func() error { return m.downloadAndLoad(false) })
+		m.startAutoUpdate()
+	}()
 
 	return nil
 }
