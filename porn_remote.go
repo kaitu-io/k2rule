@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// DefaultPornURL is the default porn domain FST database URL
-const DefaultPornURL = "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.fst.gz"
+// DefaultPornURL is the default porn domain K2R database URL
+const DefaultPornURL = "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz"
 
 // PornRemoteManager manages the porn database with auto-download and hot-reload
 type PornRemoteManager struct {
@@ -205,7 +205,7 @@ func (m *PornRemoteManager) startAutoUpdate() {
 // getCachePath returns the cache file path (based on URL hash)
 func (m *PornRemoteManager) getCachePath() string {
 	hash := sha256.Sum256([]byte(m.url))
-	filename := fmt.Sprintf("%x.fst.gz", hash[:8])
+	filename := fmt.Sprintf("%x.k2r.gz", hash[:8])
 	return filepath.Join(m.cacheDir, filename)
 }
 

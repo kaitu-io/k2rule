@@ -10,7 +10,7 @@ import (
 // Default behavior (all URLs auto-download from jsDelivr CDN):
 //   - Empty RuleURL  → DefaultRuleURL (cn_blacklist.k2r.gz) unless IsGlobal=true
 //   - Empty GeoIPURL → DefaultGeoIPURL (MaxMind GeoLite2)
-//   - Empty PornURL  → DefaultPornURL (porn_domains.fst.gz)
+//   - Empty PornURL  → DefaultPornURL (porn_domains.k2r.gz)
 //
 // Priority: File paths take precedence over URLs
 type Config struct {
@@ -24,7 +24,7 @@ type Config struct {
 
 	// Porn detection (always initialized with defaults)
 	PornURL  string // Remote porn database URL ("" = use DefaultPornURL)
-	PornFile string // Local .fst.gz file path (takes precedence over PornURL)
+	PornFile string // Local .k2r.gz file path (takes precedence over PornURL)
 
 	// Shared settings
 	CacheDir string // Cache directory (REQUIRED: caller must provide a writable path)
