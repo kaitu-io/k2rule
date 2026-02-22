@@ -35,6 +35,8 @@ const (
 	SliceTypeExactIPv4 SliceType = 0x05
 	// SliceTypeExactIPv6 is exact IPv6 addresses
 	SliceTypeExactIPv6 SliceType = 0x06
+	// SliceTypeSortedDomain is a sorted domain list with binary search (Go native format)
+	SliceTypeSortedDomain SliceType = 0x07
 )
 
 // String returns the string representation of SliceType
@@ -52,6 +54,8 @@ func (t SliceType) String() string {
 		return "ExactIPv4"
 	case SliceTypeExactIPv6:
 		return "ExactIPv6"
+	case SliceTypeSortedDomain:
+		return "SortedDomain"
 	default:
 		return fmt.Sprintf("Unknown(%d)", t)
 	}

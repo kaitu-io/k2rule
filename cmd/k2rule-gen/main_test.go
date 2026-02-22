@@ -248,19 +248,21 @@ func TestGzipOutputDecompressable(t *testing.T) {
 // TestPornHeuristicFiltering verifies that heuristic-detectable domains are excluded
 // from the output, while non-detectable domains remain.
 func TestPornHeuristicFiltering(t *testing.T) {
-	// Mix of heuristic-detectable and non-detectable domains
+	// Mix of heuristic-detectable and non-detectable domains.
+	// "secretadultsite.net" IS heuristically detected (contains "adult"),
+	// so we use genuinely non-detectable domains.
 	allDomains := []string{
-		"pornhub.com",         // heuristic-detectable (contains "porn")
-		"xvideos.com",         // heuristic-detectable (contains "xvideo")
-		"normalsite123.com",   // not detectable
-		"secretadultsite.net", // not detectable by simple keyword (no porn keyword)
-		"freeporn.com",        // heuristic-detectable (contains "porn")
-		"businesssite.org",    // not detectable
+		"pornhub.com",      // heuristic-detectable (contains "porn")
+		"xvideos.com",      // heuristic-detectable (contains "xvideo")
+		"normalsite123.com", // not detectable
+		"mybusiness.org",   // not detectable
+		"freeporn.com",     // heuristic-detectable (contains "porn")
+		"techblog.net",     // not detectable
 	}
 
 	filtered := filterHeuristicDomains(allDomains)
 
-	// Check that porn domains are filtered out
+	// Check that all remaining domains pass the heuristic check
 	for _, domain := range filtered {
 		if porn.IsPornHeuristic(domain) {
 			t.Errorf("Domain %q should have been filtered by heuristic but was not", domain)
@@ -268,7 +270,7 @@ func TestPornHeuristicFiltering(t *testing.T) {
 	}
 
 	// Check that non-porn domains are kept
-	expectedKept := []string{"normalsite123.com", "secretadultsite.net", "businesssite.org"}
+	expectedKept := []string{"normalsite123.com", "mybusiness.org", "techblog.net"}
 	keptMap := make(map[string]bool)
 	for _, d := range filtered {
 		keptMap[d] = true
@@ -280,7 +282,7 @@ func TestPornHeuristicFiltering(t *testing.T) {
 		}
 	}
 
-	// Verify at least some domains were filtered
+	// Verify at least some domains were filtered (pornhub.com, xvideos.com, freeporn.com)
 	if len(filtered) >= len(allDomains) {
 		t.Errorf("Expected some domains to be filtered, but got %d of %d", len(filtered), len(allDomains))
 	}
