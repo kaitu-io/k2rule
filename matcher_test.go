@@ -355,6 +355,117 @@ func TestGetConfig(t *testing.T) {
 	}
 }
 
+func TestSourceDomains_RegisterAndCheck(t *testing.T) {
+	// Test registerSourceDomains extracts hostnames correctly
+	registerSourceDomains(
+		"https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz",
+		"https://example.com/geoip.mmdb.gz",
+		"", // empty URL should be skipped
+	)
+
+	if !isSourceDomain("cdn.jsdelivr.net") {
+		t.Error("Expected cdn.jsdelivr.net to be a source domain")
+	}
+	if !isSourceDomain("example.com") {
+		t.Error("Expected example.com to be a source domain")
+	}
+	if isSourceDomain("google.com") {
+		t.Error("Expected google.com to NOT be a source domain")
+	}
+
+	// Cleanup
+	registerSourceDomains()
+}
+
+func TestSourceDomains_MatchReturnsDirect(t *testing.T) {
+	// Register a source domain and verify Match() returns DIRECT
+	registerSourceDomains("https://cdn.jsdelivr.net/some/path")
+
+	target := Match("cdn.jsdelivr.net")
+	if target != TargetDirect {
+		t.Errorf("Match(cdn.jsdelivr.net) = %v, want TargetDirect (source domain)", target)
+	}
+
+	// Non-source domain should not be affected
+	target = Match("other.example.com")
+	if target != TargetDirect {
+		// Without rules loaded it defaults to Direct anyway, just verify no panic
+		t.Logf("Match(other.example.com) = %v (no rules loaded)", target)
+	}
+
+	// Cleanup
+	registerSourceDomains()
+}
+
+func TestSourceDomains_OverridesGlobalMode(t *testing.T) {
+	// Source domains should return DIRECT even in Global proxy mode
+	registerSourceDomains("https://cdn.jsdelivr.net/some/path")
+
+	// Set up global mode
+	globalMutex.Lock()
+	globalConfig = &Config{
+		IsGlobal:     true,
+		GlobalTarget: TargetProxy,
+	}
+	globalMutex.Unlock()
+
+	target := Match("cdn.jsdelivr.net")
+	if target != TargetDirect {
+		t.Errorf("Match(cdn.jsdelivr.net) in global mode = %v, want TargetDirect", target)
+	}
+
+	// Non-source domain should go through proxy in Global mode
+	target = Match("google.com")
+	if target != TargetProxy {
+		t.Errorf("Match(google.com) in global mode = %v, want TargetProxy", target)
+	}
+
+	// Cleanup
+	registerSourceDomains()
+	globalMutex.Lock()
+	globalConfig = nil
+	globalMutex.Unlock()
+}
+
+func TestSourceDomains_ReInitUpdates(t *testing.T) {
+	// Register initial source domains
+	registerSourceDomains("https://old.example.com/rules.k2r.gz")
+
+	if !isSourceDomain("old.example.com") {
+		t.Error("Expected old.example.com to be a source domain")
+	}
+
+	// Re-register with new URLs (simulates re-Init)
+	registerSourceDomains("https://new.example.com/rules.k2r.gz")
+
+	if isSourceDomain("old.example.com") {
+		t.Error("Expected old.example.com to be cleared after re-register")
+	}
+	if !isSourceDomain("new.example.com") {
+		t.Error("Expected new.example.com to be a source domain after re-register")
+	}
+
+	// Cleanup
+	registerSourceDomains()
+}
+
+func TestSourceDomains_HigherPriorityThanTmpRule(t *testing.T) {
+	// Source domain DIRECT should take priority over TmpRule
+	registerSourceDomains("https://cdn.jsdelivr.net/some/path")
+
+	// Set TmpRule to proxy cdn.jsdelivr.net
+	globalTmpRules.Store("cdn.jsdelivr.net", TargetProxy)
+
+	target := Match("cdn.jsdelivr.net")
+	if target != TargetDirect {
+		t.Errorf("Match(cdn.jsdelivr.net) with TmpRule=Proxy = %v, want TargetDirect (source domain has higher priority)", target)
+	}
+
+	// Cleanup
+	globalTmpRules.Delete("cdn.jsdelivr.net")
+	registerSourceDomains()
+}
+
 func TestSetGlobalTarget(t *testing.T) {
 	t.Skip("Skipping test that requires file download")
 

@@ -3,6 +3,7 @@ package k2rule
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -11,13 +12,14 @@ import (
 )
 
 var (
-	globalConfig      *Config             // Single source of truth for configuration
-	globalManager     *RemoteRuleManager
-	globalGeoIPMgr    *GeoIPManager
-	globalPornManager *PornRemoteManager
-	globalMatcher     *Matcher
-	globalMutex       sync.RWMutex
-	globalTmpRules    sync.Map // key: string (input), value: Target
+	globalConfig        *Config             // Single source of truth for configuration
+	globalManager       *RemoteRuleManager
+	globalGeoIPMgr      *GeoIPManager
+	globalPornManager   *PornRemoteManager
+	globalMatcher       *Matcher
+	globalMutex         sync.RWMutex
+	globalTmpRules      sync.Map // key: string (input), value: Target
+	globalSourceDomains sync.Map // key: hostname string, value: struct{} — source URLs always DIRECT
 )
 
 // Matcher provides rule matching functionality
@@ -75,6 +77,19 @@ func Init(config *Config) error {
 
 	// Save config as source of truth
 	globalConfig = config
+
+	// Register source domain hostnames as always-DIRECT (before any downloads)
+	var sourceURLs []string
+	if config.RuleFile == "" && !config.IsGlobal {
+		sourceURLs = append(sourceURLs, defaultIfEmpty(config.RuleURL, DefaultRuleURL))
+	}
+	if config.GeoIPFile == "" {
+		sourceURLs = append(sourceURLs, defaultIfEmpty(config.GeoIPURL, DefaultGeoIPURL))
+	}
+	if config.Antiporn && config.PornFile == "" {
+		sourceURLs = append(sourceURLs, defaultIfEmpty(config.PornURL, DefaultPornURL))
+	}
+	registerSourceDomains(sourceURLs...)
 
 	// Initialize rule manager
 	// Priority: RuleFile > RuleURL (empty RuleURL uses default)
@@ -327,17 +342,22 @@ func Match(input string) Target {
 	}
 
 	// Step 2: Treat as domain
-	// Step 2a: Check TmpRule (exact match, higher priority than Global/static)
+	// Step 2a: Check source domains (rule/geoip/porn download hosts — always DIRECT)
+	if isSourceDomain(input) {
+		return TargetDirect
+	}
+
+	// Step 2b: Check TmpRule (exact match, higher priority than Global/static)
 	if target, ok := globalTmpRules.Load(input); ok {
 		return target.(Target)
 	}
 
-	// Step 2b: Check global mode
+	// Step 2c: Check global mode
 	if config != nil && config.IsGlobal {
 		return config.GlobalTarget
 	}
 
-	// Step 2c: Check domain rules (if rules loaded)
+	// Step 2d: Check domain rules (if rules loaded)
 	if manager != nil {
 		if target := manager.matchDomain(input); target != manager.getFallback() {
 			return target
@@ -492,6 +512,37 @@ func matchStaticRules(input string) Target {
 		return target
 	}
 	return manager.getFallback()
+}
+
+// Source domain helpers
+
+// registerSourceDomains extracts hostnames from the given URLs and registers them
+// as source domains that always route DIRECT (bypasses TmpRule + Global mode).
+func registerSourceDomains(urls ...string) {
+	// Clear existing entries
+	globalSourceDomains.Range(func(key, _ any) bool {
+		globalSourceDomains.Delete(key)
+		return true
+	})
+
+	for _, rawURL := range urls {
+		if rawURL == "" {
+			continue
+		}
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			continue
+		}
+		if host := u.Hostname(); host != "" {
+			globalSourceDomains.Store(host, struct{}{})
+		}
+	}
+}
+
+// isSourceDomain returns true if the domain is a registered source domain.
+func isSourceDomain(domain string) bool {
+	_, ok := globalSourceDomains.Load(domain)
+	return ok
 }
 
 // Helper functions
