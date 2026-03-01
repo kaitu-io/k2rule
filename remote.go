@@ -70,6 +70,9 @@ func (m *RemoteRuleManager) Init() error {
 	}
 
 	// 2. Cache doesn't exist or is corrupted, download in background (non-blocking)
+	// Safe fallback: proxy all traffic until rules load to prevent GFW DNS pollution
+	// during the download window. downloadAndLoad() restores the file's actual fallback.
+	m.fallback.Store(uint32(TargetProxy))
 	slog.Info("rules cache not found, downloading in background")
 	go func() {
 		retryForever("rules", func() error { return m.downloadAndLoad(false) })
