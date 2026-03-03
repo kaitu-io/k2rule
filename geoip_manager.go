@@ -13,17 +13,31 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/maxminddb-golang"
 )
 
 // DefaultGeoIPURL is the default MaxMind GeoLite2 Country database URL
 const DefaultGeoIPURL = "https://cdn.jsdelivr.net/npm/geolite2-country/GeoLite2-Country.mmdb.gz"
 
-// GeoIPManager manages the GeoIP database with auto-download and hot-reload
+// countryRecord is a minimal decode struct for MaxMind lookups.
+// Only decodes iso_code, skipping Names/Continent/RegisteredCountry/Traits (~50 → ~5 allocs).
+type countryRecord struct {
+	Country struct {
+		IsoCode string `maxminddb:"iso_code"`
+	} `maxminddb:"country"`
+}
+
+// GeoIPManager manages the GeoIP database with auto-download and hot-reload.
+// Uses maxminddb directly (not geoip2 wrapper) with offset caching for zero-alloc lookups.
 type GeoIPManager struct {
 	url      string
 	cacheDir string
-	reader   *geoip2.Reader
+	reader   *maxminddb.Reader
+
+	// Offset cache: maps data-section offset → ISO country code.
+	// GeoLite2-Country has ~250 unique country records, so cache is bounded.
+	// After warmup, all lookups are zero-alloc (trie traversal + cache hit).
+	cache sync.Map // map[uintptr]string
 
 	// Update metadata
 	mu         sync.RWMutex
@@ -87,8 +101,11 @@ func (m *GeoIPManager) Stop() {
 	}
 }
 
-// LookupCountry looks up the ISO country code for an IP address
-// Returns the 2-letter country code (e.g., "US", "CN") or error if not found
+// LookupCountry looks up the ISO country code for an IP address.
+// Returns the 2-letter country code (e.g., "US", "CN") or error if not found.
+//
+// Uses LookupOffset + offset cache for zero-alloc lookups after warmup (~250 unique records).
+// Only decodes the iso_code field via minimal countryRecord struct.
 func (m *GeoIPManager) LookupCountry(ip net.IP) (string, error) {
 	m.mu.RLock()
 	reader := m.reader
@@ -98,16 +115,33 @@ func (m *GeoIPManager) LookupCountry(ip net.IP) (string, error) {
 		return "", fmt.Errorf("GeoIP database not loaded")
 	}
 
-	record, err := reader.Country(ip)
+	// Step 1: Trie traversal — reads mmap pages only, zero heap allocations
+	offset, err := reader.LookupOffset(ip)
 	if err != nil {
 		return "", fmt.Errorf("GeoIP lookup failed: %w", err)
 	}
-
-	if record.Country.IsoCode == "" {
+	if offset == maxminddb.NotFound {
 		return "", fmt.Errorf("no country found for IP")
 	}
 
-	return record.Country.IsoCode, nil
+	// Step 2: Cache hit — zero allocations
+	if cached, ok := m.cache.Load(offset); ok {
+		return cached.(string), nil
+	}
+
+	// Step 3: First-time decode — minimal struct (~5 allocs, happens at most ~250 times)
+	var record countryRecord
+	if err := reader.Decode(offset, &record); err != nil {
+		return "", fmt.Errorf("GeoIP decode failed: %w", err)
+	}
+
+	code := record.Country.IsoCode
+	if code == "" {
+		return "", fmt.Errorf("no country found for IP")
+	}
+
+	m.cache.Store(offset, code)
+	return code, nil
 }
 
 // downloadAndLoad downloads the GeoIP database and loads it
@@ -195,17 +229,19 @@ func (m *GeoIPManager) downloadAndLoad(useETag bool) error {
 	return nil
 }
 
-// loadDatabase loads a GeoIP database from a file
+// loadDatabase loads a GeoIP database from a file.
+// Uses maxminddb.Open directly (mmap, MAP_SHARED, PROT_READ).
 func (m *GeoIPManager) loadDatabase(path string) error {
-	reader, err := geoip2.Open(path)
+	reader, err := maxminddb.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open GeoIP database: %w", err)
 	}
 
-	// Atomic swap
+	// Atomic swap + clear offset cache (offsets belong to old reader)
 	m.mu.Lock()
 	oldReader := m.reader
 	m.reader = reader
+	m.cache = sync.Map{}
 	m.mu.Unlock()
 
 	// Grace period: concurrent LookupCountry() calls may still hold the old reader pointer

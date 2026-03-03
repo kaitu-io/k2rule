@@ -23,16 +23,14 @@ k2rule/
 │   │   └── cached.go       # CachedMmapReader — lock-free hot-reload
 │   ├── clash/
 │   │   └── converter.go    # SliceConverter: Clash YAML → K2RULEV3
-│   ├── porn/
-│   │   ├── heuristic.go    # IsPornHeuristic: 8-layer pattern matching
-│   │   └── data.go         # Heuristic data (word lists, TLD patterns)
-│   ├── cache/              # Internal cache utilities
-│   └── geoip/              # GeoIP helpers
+│   └── porn/
+│       ├── heuristic.go    # IsPornHeuristic: 8-layer pattern matching
+│       └── data.go         # Heuristic data (word lists, TLD patterns)
 ├── clash_rules/            # Clash YAML source configs (cn_blacklist.yml, cn_whitelist.yml)
 ├── docs/
-│   ├── features/           # Feature specs (pure-go-rewrite.md, etc.)
 │   ├── knowledge/          # Distilled patterns (architecture, bugs, testing)
-│   └── *.md                # Architecture docs
+│   ├── porn-heuristic-detection.md   # 8-layer heuristic algorithm docs
+│   └── porn-heuristic-detection-zh.md
 ├── examples/basic/         # Usage example
 └── .github/workflows/
     └── generate-rules.yml  # CI: go test + generate-all + generate-porn + release
@@ -47,9 +45,9 @@ The core binary format layer. All three reader types share the same K2RULEV3 for
 | Type | Use |
 |------|-----|
 | `SliceWriter` | Build K2RULEV3 binary (used by generator and converter) |
-| `SliceReader` | In-memory queries (used for porn checker) |
+| `SliceReader` | In-memory heap queries (used only in tests / generation) |
 | `MmapReader` | Zero-copy queries — decompresses gzip to temp file, then mmaps |
-| `CachedMmapReader` | Lock-free hot-reload using `atomic.Value` |
+| `CachedMmapReader` | Lock-free hot-reload using `atomic.Value` (used by rules + porn) |
 
 ### `internal/clash` — Clash YAML Converter
 
@@ -127,7 +125,7 @@ go run ./cmd/k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v
 1. `go test ./...`
 2. `go run ./cmd/k2rule-gen generate-all -o output/ -v`
 3. `go run ./cmd/k2rule-gen generate-porn -o output/porn_domains.k2r.gz -v`
-4. Creates GitHub Release + deploys to `release` branch
+4. Deploys to `release` branch + purges jsDelivr cache
 
 ## Config
 
@@ -146,22 +144,35 @@ k2rule.Init(&k2rule.Config{
 
 | Package | Purpose |
 |---------|---------|
-| `github.com/edsrzf/mmap-go` | Cross-platform mmap |
-| `github.com/oschwald/geoip2-golang` | MaxMind GeoIP2 |
+| `github.com/edsrzf/mmap-go` | Cross-platform mmap for K2RULEV3 files |
+| `github.com/oschwald/maxminddb-golang` | MaxMind mmdb reader (direct, with offset cache) |
 | `gopkg.in/yaml.v3` | Clash YAML parsing |
+
+## Runtime Memory Model
+
+All large data uses file-backed mmap (`MAP_SHARED`, `PROT_READ`) — OS can evict pages under memory pressure.
+
+| Component | Heap | Virtual (mmap) | Notes |
+|-----------|------|----------------|-------|
+| K2RULEV3 rules | ~600 B | ~6-11 MB | CachedMmapReader, lock-free hot-reload |
+| K2RULEV3 porn | ~600 B | ~5-10 MB | CachedMmapReader, same pattern as rules |
+| GeoIP .mmdb | ~2.5 KB (offset cache) | 9.19 MB (RSS ~300 KB) | maxminddb mmap + ~250 entry offset cache |
+| Heuristic data | ~50 KB | 0 | Static, allocated at init |
+| **Total** | **~54 KB** | **~20-30 MB virtual** | All mmap pages are 100% evictable |
+
+GeoIP uses `LookupOffset` + minimal `countryRecord` struct + `sync.Map` offset cache.
+After ~250 unique country records are cached, all lookups are zero-alloc.
 
 ## Domain Vocabulary
 
 | Term | Definition |
 |------|------------|
 | K2RULEV3 | Current binary format (sorted bytes, binary search) |
-| K2RULEV2 | Previous format (FST-based, Rust writer) — deleted |
 | SliceWriter | Go type that builds K2RULEV3 binary |
 | SliceReader | Heap-based K2RULEV3 reader |
 | MmapReader | Zero-copy K2RULEV3 reader via mmap |
 | CachedMmapReader | Atomic hot-reload wrapper for MmapReader |
 | SliceConverter | Clash YAML → K2RULEV3 converter |
-| PORNFST | Previous porn format — deleted, replaced by K2RULEV3 |
 | SortedDomain | K2RULEV3 slice type 0x01 — reversed, sorted domain bytes |
 | Fallback | Default target when no rule matches (stored in file header) |
 | TmpRule | Runtime per-connection rule override (sync.Map, highest priority) |
@@ -173,8 +184,9 @@ k2rule.Init(&k2rule.Config{
 
 `docs/knowledge/` — distilled patterns from implementation:
 
-- `architecture-decisions.md` — why K2RULEV3, mmap + temp file, atomic hot-reload, etc.
-- `architecture-overview.md` — module map, format spec, match priority
+- `architecture-decisions.md` — why K2RULEV3, mmap + temp file, atomic hot-reload, memory optimization, etc.
 - `bugfix-patterns.md` — cross-language drift, suffix false positives, URL parsing
 - `testing-strategies.md` — writer-first TDD, shared helpers, HTTP bypass via SetProviderRules
 - `framework-gotchas.md` — mmap + gzip, sort.Search semantics, binary.Read unexported fields
+
+`docs/porn-heuristic-detection.md` — detailed 8-layer heuristic algorithm, coverage stats (~47%), maintenance guide for adding keywords/patterns.

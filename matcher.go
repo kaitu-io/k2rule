@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/kaitu-io/k2rule/internal/slice"
-	"github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/maxminddb-golang"
 )
 
 var (
@@ -113,7 +113,7 @@ func Init(config *Config) error {
 
 	// Initialize GeoIP (Priority: GeoIPFile > GeoIPURL)
 	if config.GeoIPFile != "" {
-		reader, err := geoip2.Open(config.GeoIPFile)
+		reader, err := maxminddb.Open(config.GeoIPFile)
 		if err != nil {
 			return fmt.Errorf("failed to open GeoIP file: %w", err)
 		}

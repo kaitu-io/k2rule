@@ -170,3 +170,65 @@ A read lock would block all readers during the brief window of a reload. For a p
 ### Validating Tests
 
 - `TestCachedMmapReaderAtomicSwap` — `internal/slice/cached_test.go` (if present) / covered by integration tests
+
+---
+
+## AD-006: Runtime Memory Optimization — mmap for Porn + Zero-Alloc GeoIP
+
+**Date:** 2026-03-03
+**Status:** implemented
+
+### Decision
+
+Two optimizations to minimize runtime heap memory:
+
+1. **PornChecker: SliceReader → CachedMmapReader** — porn rule data moved from Go heap to file-backed mmap
+2. **GeoIP: maxminddb direct + minimal struct + offset cache** — replaced geoip2-golang wrapper with direct maxminddb usage, eliminating ~50 allocs/2.5KB per lookup
+
+### Context — Before
+
+| Component | Heap | mmap |
+|-----------|------|------|
+| Rules (CachedMmapReader) | ~600 B | ~6-11 MB |
+| PornChecker (SliceReader) | **5-25 MB** | 0 |
+| GeoIP (geoip2.Country) | **~2.5 KB/lookup** | 9.19 MB |
+| **Total steady-state heap** | **5-25 MB** | |
+
+PornChecker used `SliceReader` which calls `os.ReadFile` + `io.ReadAll`, loading the entire decompressed K2RULEV3 file into Go heap. During hot-reload, three copies coexisted briefly (old data + new compressed + new decompressed = 3-5x the file size).
+
+GeoIP used `geoip2.Country()` which decoded the full struct (3 Names maps with 8 languages, Continent, RegisteredCountry, RepresentedCountry, Traits) but k2rule only used `Country.IsoCode` (2 bytes).
+
+### Context — After
+
+| Component | Heap | mmap |
+|-----------|------|------|
+| Rules (CachedMmapReader) | ~600 B | ~6-11 MB |
+| PornChecker (CachedMmapReader) | ~600 B | ~5-10 MB |
+| GeoIP (maxminddb + offset cache) | ~2.5 KB total | 9.19 MB (RSS ~300 KB) |
+| **Total steady-state heap** | **~54 KB** | |
+
+### GeoIP Optimization Details
+
+Uses `maxminddb.Reader.LookupOffset(ip)` for zero-alloc trie traversal, then caches offset→country code in `sync.Map`. GeoLite2-Country has ~250 unique country records (normalized DB), so cache is bounded at ~250 entries. After warmup, all lookups hit cache = zero heap allocations.
+
+`countryRecord` minimal struct only decodes `country.iso_code`, skipping Names/Continent/RegisteredCountry/Traits fields (~50 allocs → ~5 allocs per first-time decode).
+
+Dependency changed from `geoip2-golang` (wrapper) to `maxminddb-golang` (direct) — removes one dependency.
+
+### PornChecker Optimization Details
+
+Changed `PornChecker.reader` from `*slice.SliceReader` to `*slice.CachedMmapReader`. Same pattern as `RemoteRuleManager` — lock-free `atomic.Value` swap with 5-second grace period.
+
+`PornRemoteManager` simplified: removed `checker *PornChecker` + `sync.RWMutex`, replaced with `reader *slice.CachedMmapReader` directly. `loadDatabase` reduced to one line: `m.reader.Load(path)`.
+
+### All mmap is file-backed and evictable
+
+All mmap regions use `MAP_SHARED` + `PROT_READ`. The OS can reclaim any page under memory pressure without writeback. Pages are not counted toward Go heap and are not scanned by GC.
+
+### Validating Tests
+
+- `TestPornCheckerWithSliceReader` — `porn_test.go` (now uses CachedMmapReader internally)
+- `TestPornCheckerFromFile` — `porn_test.go`
+- `TestPornRemoteManager_IsPorn_NotInitialized` — `porn_remote_test.go`
+- `TestGeoIPManager_Init` — `geoip_manager_test.go`
+- `TestGeoIPManager_LookupCountry_NotInitialized` — `geoip_manager_test.go`

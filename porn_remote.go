@@ -10,18 +10,21 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/kaitu-io/k2rule/internal/slice"
 )
 
 // DefaultPornURL is the default porn domain K2R database URL
 const DefaultPornURL = "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.k2r.gz"
 
-// PornRemoteManager manages the porn database with auto-download and hot-reload
+// PornRemoteManager manages the porn database with auto-download and hot-reload.
+// Uses CachedMmapReader for lock-free atomic hot-swap (same pattern as RemoteRuleManager).
 type PornRemoteManager struct {
 	url      string
 	cacheDir string
-	checker  *PornChecker
+	reader   *slice.CachedMmapReader // lock-free mmap reader
 
-	// Update metadata
+	// Update metadata (mu only protects etag/lastUpdate)
 	mu         sync.RWMutex
 	etag       string
 	lastUpdate time.Time
@@ -37,6 +40,7 @@ func NewPornRemoteManager(url, cacheDir string) *PornRemoteManager {
 	return &PornRemoteManager{
 		url:      url,
 		cacheDir: cacheDir,
+		reader:   slice.NewCachedMmapReader(),
 		stopCh:   make(chan struct{}),
 	}
 }
@@ -72,9 +76,10 @@ func (m *PornRemoteManager) Init() error {
 	return nil
 }
 
-// Stop stops the auto-update background task
+// Stop stops the auto-update background task and releases mmap resources
 func (m *PornRemoteManager) Stop() {
 	close(m.stopCh)
+	m.reader.Close()
 }
 
 // Update manually triggers a database update check
@@ -82,18 +87,16 @@ func (m *PornRemoteManager) Update() error {
 	return m.downloadAndLoad(true)
 }
 
-// IsPorn checks if a domain is a porn domain
+// IsPorn checks if a domain is a porn domain.
+// Uses heuristic first (fast, no I/O), then mmap-based K2RULEV3 lookup (lock-free).
 func (m *PornRemoteManager) IsPorn(domain string) bool {
-	m.mu.RLock()
-	checker := m.checker
-	m.mu.RUnlock()
-
-	if checker == nil {
-		// Fallback to heuristic only
-		return IsPornHeuristic(domain)
+	if IsPornHeuristic(domain) {
+		return true
 	}
-
-	return checker.IsPorn(domain)
+	if target := m.reader.MatchDomain(domain); target != nil {
+		return *target == 2 // targetReject
+	}
+	return false
 }
 
 // downloadAndLoad downloads the porn database and loads it
@@ -168,20 +171,10 @@ func (m *PornRemoteManager) downloadAndLoad(useETag bool) error {
 	return nil
 }
 
-// loadDatabase loads a porn database from a gzip file
+// loadDatabase loads a porn database from a gzip file.
+// CachedMmapReader handles atomic swap + 5-second grace period internally.
 func (m *PornRemoteManager) loadDatabase(path string) error {
-	// The file is gzipped, use NewPornCheckerFromFile which handles decompression
-	checker, err := NewPornCheckerFromFile(path)
-	if err != nil {
-		return fmt.Errorf("failed to load porn database: %w", err)
-	}
-
-	// Atomic swap
-	m.mu.Lock()
-	m.checker = checker
-	m.mu.Unlock()
-
-	return nil
+	return m.reader.Load(path)
 }
 
 // startAutoUpdate runs background auto-update (every 6 hours)
