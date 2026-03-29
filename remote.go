@@ -16,9 +16,8 @@ import (
 	"github.com/kaitu-io/k2rule/internal/slice"
 )
 
-// DefaultRuleURL is the default rule file URL (China blacklist - foreign sites via proxy)
-// Alternative: cn_whitelist.k2r.gz (China whitelist - domestic sites direct)
-const DefaultRuleURL = "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz"
+// DefaultRuleURL is the default rule file URL (China whitelist - domestic sites direct, rest via proxy)
+const DefaultRuleURL = "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_whitelist.k2r.gz"
 
 // RemoteRuleManager manages remote rule files with auto-download and hot-reload
 type RemoteRuleManager struct {
